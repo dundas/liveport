@@ -9,6 +9,10 @@ export * from "./errors";
 // Keys
 export * from "./keys";
 
+// Auth
+export { mechStorageAdapter } from "./auth";
+export type { Adapter } from "./auth";
+
 // Re-export specific modules for direct imports
 export { getDatabase, initDatabase, MechStorageClient, DatabaseError } from "./db";
 export type { DatabaseConfig } from "./db";

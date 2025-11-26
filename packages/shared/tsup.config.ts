@@ -6,6 +6,7 @@ export default defineConfig({
     "db/index": "src/db/index.ts",
     "redis/index": "src/redis/index.ts",
     "keys/index": "src/keys/index.ts",
+    "auth/index": "src/auth/index.ts",
   },
   format: ["cjs", "esm"],
   dts: true,

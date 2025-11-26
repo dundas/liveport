@@ -26,6 +26,11 @@
       "types": "./dist/keys/index.d.ts",
       "import": "./dist/keys/index.mjs",
       "require": "./dist/keys/index.js"
+    },
+    "./auth": {
+      "types": "./dist/auth/index.d.ts",
+      "import": "./dist/auth/index.mjs",
+      "require": "./dist/auth/index.js"
     }
   },
   "scripts": {
@@ -38,6 +43,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
+    "better-auth": "^1.4.2",
     "tsup": "^8.0.0",
     "typescript": "^5.3.0",
     "vitest": "^2.0.0"
@@ -46,5 +52,13 @@
     "ioredis": "^5.3.0",
     "nanoid": "^5.0.0",
     "zod": "^3.22.0"
+  },
+  "peerDependencies": {
+    "better-auth": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-auth": {
+      "optional": true
+    }
   }
 }

@@ -8,10 +8,12 @@ dist/
 out/
 build/
 
-# Environment files
+# Environment files - NEVER commit these
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
 
 # IDE
 .vscode/
@@ -37,5 +39,10 @@ coverage/
 # TypeScript
 *.tsbuildinfo
 
+# Playwright
+playwright-report/
+test-results/
+
 # Misc
 .cache/
+*.pem

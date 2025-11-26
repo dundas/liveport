@@ -145,7 +145,7 @@ export class UserRepository {
    */
   async findById(id: string): Promise<User | null> {
     const result = await this.db.query<UserRow>(
-      `SELECT * FROM ${TABLE_NAMES.USERS} WHERE id = $1`,
+      `SELECT * FROM "${TABLE_NAMES.USER}" WHERE id = $1`,
       [id]
     );
     if (result.rows.length === 0) {
@@ -159,7 +159,7 @@ export class UserRepository {
    */
   async findByEmail(email: string): Promise<User | null> {
     const result = await this.db.query<UserRow>(
-      `SELECT * FROM ${TABLE_NAMES.USERS} WHERE email = $1`,
+      `SELECT * FROM "${TABLE_NAMES.USER}" WHERE email = $1`,
       [email]
     );
     if (result.rows.length === 0) {
@@ -179,12 +179,12 @@ export class UserRepository {
     const offset = options?.offset || 0;
 
     const countResult = await this.db.query<{ count: string }>(
-      `SELECT COUNT(*) as count FROM ${TABLE_NAMES.USERS}`
+      `SELECT COUNT(*) as count FROM "${TABLE_NAMES.USER}"`
     );
     const total = parseInt(countResult.rows[0]?.count || "0", 10);
 
     const result = await this.db.query<UserRow>(
-      `SELECT * FROM ${TABLE_NAMES.USERS} ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      `SELECT * FROM "${TABLE_NAMES.USER}" ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
       [limit, offset]
     );
 
@@ -199,7 +199,7 @@ export class UserRepository {
    */
   async create(input: CreateUserInput): Promise<User> {
     const result = await this.db.query<UserRow>(
-      `INSERT INTO ${TABLE_NAMES.USERS} (email, name, tier)
+      `INSERT INTO "${TABLE_NAMES.USER}" (email, name, tier)
        VALUES ($1, $2, $3)
        RETURNING *`,
       [input.email, input.name || null, input.tier || "free"]
@@ -236,7 +236,7 @@ export class UserRepository {
     values.push(id);
 
     const result = await this.db.query<UserRow>(
-      `UPDATE ${TABLE_NAMES.USERS}
+      `UPDATE "${TABLE_NAMES.USER}"
        SET ${fields.join(", ")}
        WHERE id = $${paramIndex}
        RETURNING *`,
@@ -254,7 +254,7 @@ export class UserRepository {
    */
   async delete(id: string): Promise<boolean> {
     const result = await this.db.query(
-      `DELETE FROM ${TABLE_NAMES.USERS} WHERE id = $1`,
+      `DELETE FROM "${TABLE_NAMES.USER}" WHERE id = $1`,
       [id]
     );
     return result.rowCount > 0;
