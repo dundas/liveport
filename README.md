@@ -6,15 +6,55 @@ LivePort enables AI agents to test applications running on your localhost throug
 
 ## Quick Start
 
-```bash
-# Install the CLI
-npm install -g @liveport/cli
+### 1. Get a Bridge Key
 
-# Create a tunnel (with bridge key from dashboard)
+Sign up at [app.liveport.dev](https://app.liveport.dev) and create a bridge key from the dashboard.
+
+### 2. Install the CLI
+
+```bash
+npm install -g @liveport/cli
+```
+
+### 3. Create a Tunnel
+
+```bash
+# Start your local server (e.g., on port 3000)
+npm run dev
+
+# In another terminal, create a tunnel
 liveport connect 3000 --key lpk_your_bridge_key
+
+# You'll get a URL like: https://abc123.liveport.dev
+```
+
+### CLI Commands
+
+```bash
+# Connect to a local port
+liveport connect <port> --key <bridge-key>
+
+# Check tunnel status
+liveport status
+
+# Disconnect tunnel
+liveport disconnect
+
+# Show help
+liveport --help
 ```
 
 ## For AI Agents
+
+The Agent SDK allows AI coding assistants (like Claude, Cursor, etc.) to wait for and access localhost tunnels created by developers.
+
+### Install
+
+```bash
+npm install @liveport/agent-sdk
+```
+
+### Usage
 
 ```typescript
 import { LivePortAgent } from "@liveport/agent-sdk";
@@ -23,7 +63,7 @@ const agent = new LivePortAgent({
   key: process.env.LIVEPORT_BRIDGE_KEY!,
 });
 
-// Wait for tunnel to be ready
+// Wait for tunnel to be ready (blocks until developer creates one)
 const tunnel = await agent.waitForTunnel({ timeout: 30000 });
 
 console.log(`Testing at: ${tunnel.url}`);
@@ -33,6 +73,29 @@ await runE2ETests(tunnel.url);
 
 // Cleanup
 await agent.disconnect();
+```
+
+### API Reference
+
+```typescript
+// List all active tunnels
+const tunnels = await agent.listTunnels();
+
+// Wait for a tunnel with custom options
+const tunnel = await agent.waitForTunnel({
+  timeout: 60000,      // Max wait time in ms
+  pollInterval: 2000,  // How often to check
+});
+
+// Tunnel object
+interface AgentTunnel {
+  tunnelId: string;
+  subdomain: string;
+  url: string;         // Full URL: https://abc123.liveport.dev
+  localPort: number;
+  createdAt: Date;
+  expiresAt: Date;
+}
 ```
 
 ## Project Structure
