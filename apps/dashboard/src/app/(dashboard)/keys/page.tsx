@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,18 +12,95 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Key, Trash2 } from "lucide-react";
+import { Key, Trash2, Loader2 } from "lucide-react";
+import { CreateKeyDialog } from "@/components/keys/create-key-dialog";
+
+interface BridgeKeyResponse {
+  id: string;
+  name: string;
+  prefix: string;
+  status: "active" | "revoked" | "expired";
+  expiresAt: string;
+  maxUses: number | null;
+  currentUses: number;
+  allowedPort: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export default function KeysPage() {
-  // Placeholder data - will be fetched from API
-  const keys: Array<{
-    id: string;
-    name: string;
-    prefix: string;
-    status: "active" | "revoked";
-    createdAt: string;
-    lastUsed: string | null;
-  }> = [];
+  const [keys, setKeys] = useState<BridgeKeyResponse[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  const fetchKeys = useCallback(async () => {
+    try {
+      const response = await fetch("/api/keys");
+      if (!response.ok) {
+        throw new Error("Failed to fetch keys");
+      }
+      const data = await response.json();
+      setKeys(data.keys);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch keys");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchKeys();
+  }, [fetchKeys]);
+
+  const handleRevoke = async (id: string) => {
+    setRevokingId(id);
+    try {
+      const response = await fetch(`/api/keys/${id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to revoke key");
+      }
+      // Refresh the list
+      await fetchKeys();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to revoke key");
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const getStatusBadge = (key: BridgeKeyResponse) => {
+    const now = new Date();
+    const expiresAt = new Date(key.expiresAt);
+    
+    if (key.status === "revoked") {
+      return <Badge variant="destructive">Revoked</Badge>;
+    }
+    if (expiresAt < now) {
+      return <Badge variant="secondary">Expired</Badge>;
+    }
+    return <Badge variant="default">Active</Badge>;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -31,11 +111,14 @@ export default function KeysPage() {
             Manage your bridge keys for CLI and agent authentication
           </p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Key
-        </Button>
+        <CreateKeyDialog onKeyCreated={fetchKeys} />
       </div>
+
+      {error && (
+        <div className="mb-4 rounded-md bg-destructive/10 p-4 text-destructive">
+          {error}
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -52,43 +135,50 @@ export default function KeysPage() {
               <p className="mb-4 text-center text-sm text-muted-foreground">
                 Create a bridge key to start using LivePort with your CLI or agents
               </p>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Create Your First Key
-              </Button>
+              <CreateKeyDialog onKeyCreated={fetchKeys} />
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
                   <TableHead>Key</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Uses</TableHead>
+                  <TableHead>Expires</TableHead>
                   <TableHead>Created</TableHead>
-                  <TableHead>Last Used</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {keys.map((key) => (
                   <TableRow key={key.id}>
-                    <TableCell className="font-medium">{key.name}</TableCell>
                     <TableCell>
-                      <code className="rounded bg-muted px-2 py-1 text-sm">
+                      <code className="rounded bg-muted px-2 py-1 text-sm font-mono">
                         {key.prefix}...
                       </code>
                     </TableCell>
+                    <TableCell>{getStatusBadge(key)}</TableCell>
                     <TableCell>
-                      <Badge variant={key.status === "active" ? "default" : "secondary"}>
-                        {key.status}
-                      </Badge>
+                      {key.currentUses}
+                      {key.maxUses ? ` / ${key.maxUses}` : ""}
                     </TableCell>
-                    <TableCell>{key.createdAt}</TableCell>
-                    <TableCell>{key.lastUsed || "Never"}</TableCell>
+                    <TableCell>{formatDate(key.expiresAt)}</TableCell>
+                    <TableCell>{formatDate(key.createdAt)}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {key.status === "active" && new Date(key.expiresAt) > new Date() && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRevoke(key.id)}
+                          disabled={revokingId === key.id}
+                        >
+                          {revokingId === key.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
