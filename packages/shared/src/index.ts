@@ -10,8 +10,42 @@ export * from "./errors";
 export * from "./keys";
 
 // Re-export specific modules for direct imports
-export { getDatabase, initDatabase, DatabaseClient } from "./db";
+export { getDatabase, initDatabase, MechStorageClient, DatabaseError } from "./db";
 export type { DatabaseConfig } from "./db";
 
-export { createRedisClient, createRateLimiter } from "./redis";
-export type { RedisConfig, RateLimiter } from "./redis";
+export {
+  createRedisClient,
+  getRedisClient,
+  initRedis,
+  closeRedis,
+  checkRedisHealth,
+  createRateLimiter,
+  enforceRateLimit,
+  RateLimitPresets,
+  createTunnelStateManager,
+  TunnelStateManager,
+  createCache,
+  RedisCache,
+  createBridgeKeyCache,
+  createBridgeKeyCacheHelper,
+  BridgeKeyCache,
+  createSessionCache,
+  SessionCache,
+  RedisKeys,
+  RedisTTL,
+} from "./redis";
+export type {
+  RedisConfig,
+  RedisHealthCheck,
+  Redis,
+  RateLimiter,
+  RateLimiterOptions,
+  RateLimitResult,
+  TunnelHeartbeat,
+  TunnelMetrics,
+  ActiveTunnel,
+  CacheOptions,
+  CachedValue,
+  BridgeKeyCacheRecord,
+  SessionData,
+} from "./redis";
