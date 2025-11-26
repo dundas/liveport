@@ -1,6 +1,6 @@
 /**
  * Bridge Key API Routes
- * 
+ *
  * GET  /api/keys - List all bridge keys for the current user
  * POST /api/keys - Create a new bridge key
  */
@@ -9,16 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { getBridgeKeyRepository } from "@/lib/db";
-import { generateBridgeKey, getKeyPrefix, type BridgeKey } from "@liveport/shared";
-
-// Simple hash function for bridge keys (in production, use bcrypt/argon2)
-async function hashKey(key: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(key);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+import { generateBridgeKey, getKeyPrefix, hashKey, type BridgeKey } from "@liveport/shared";
 
 /**
  * GET /api/keys - List user's bridge keys

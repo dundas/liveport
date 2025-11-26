@@ -302,13 +302,30 @@ export class BridgeKeyRepository {
   }
 
   /**
-   * Find a bridge key by its hash (for key validation in tunnel server)
+   * Find a bridge key by its hash (for legacy SHA-256 lookups)
+   * @deprecated Use findByKeyPrefix + verifyKey for bcrypt hashes
    */
   async findByKeyHash(keyHash: string): Promise<BridgeKey | null> {
     const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
       limit: 100,
     });
     const record = records.find((r) => r.key_hash === keyHash);
+    if (!record) {
+      return null;
+    }
+    return rowToBridgeKey(record);
+  }
+
+  /**
+   * Find a bridge key by its prefix (for bcrypt verification)
+   * The prefix is the first 8 characters of the key, used to narrow down
+   * candidates before verifying with bcrypt.compare()
+   */
+  async findByKeyPrefix(keyPrefix: string): Promise<BridgeKey | null> {
+    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
+      limit: 100,
+    });
+    const record = records.find((r) => r.key_prefix === keyPrefix);
     if (!record) {
       return null;
     }

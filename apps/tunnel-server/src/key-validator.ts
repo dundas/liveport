@@ -9,18 +9,11 @@ import {
   isValidKeyFormat,
   MechStorageClient,
   BridgeKeyRepository,
+  verifyKey,
+  isBcryptHash,
+  legacySha256Hash,
   type BridgeKey,
 } from "@liveport/shared";
-
-// Simple hash function (same as in dashboard API)
-// TODO: Migrate to bcrypt/argon2 for production
-async function hashKey(key: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(key);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 export interface KeyValidationResult {
   valid: boolean;
@@ -135,13 +128,13 @@ export class KeyValidator {
       };
     }
 
-    // Hash the key for lookup
-    const keyHash = await hashKey(key);
+    // Extract key prefix for lookup
+    const keyPrefix = getKeyPrefix(key);
 
-    // Look up in database
+    // Look up in database by prefix
     let record: BridgeKey | null;
     try {
-      record = await this.repo.findByKeyHash(keyHash);
+      record = await this.repo.findByKeyPrefix(keyPrefix);
     } catch (error) {
       console.error("[KeyValidator] Database lookup failed:", error);
       return {
@@ -153,7 +146,36 @@ export class KeyValidator {
 
     // Key not found
     if (!record) {
-      console.log(`[KeyValidator] Key not found: ${getKeyPrefix(key)}...`);
+      console.log(`[KeyValidator] Key not found: ${keyPrefix}...`);
+      return {
+        valid: false,
+        error: "Invalid key",
+        errorCode: "INVALID_KEY",
+      };
+    }
+
+    // Verify the key against the stored hash
+    // Supports both bcrypt ($2 prefix) and legacy SHA-256 hashes
+    let keyValid: boolean;
+    try {
+      if (isBcryptHash(record.keyHash)) {
+        keyValid = await verifyKey(key, record.keyHash);
+      } else {
+        // Legacy SHA-256 hash comparison
+        const computedHash = await legacySha256Hash(key);
+        keyValid = computedHash === record.keyHash;
+      }
+    } catch (error) {
+      console.error("[KeyValidator] Hash verification failed:", error);
+      return {
+        valid: false,
+        error: "Key validation failed",
+        errorCode: "VALIDATION_ERROR",
+      };
+    }
+
+    if (!keyValid) {
+      console.log(`[KeyValidator] Key hash mismatch: ${keyPrefix}...`);
       return {
         valid: false,
         error: "Invalid key",

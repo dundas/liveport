@@ -9,6 +9,9 @@ export * from "./errors";
 // Keys
 export * from "./keys";
 
+// Crypto
+export { hashKey, verifyKey, legacySha256Hash, isBcryptHash } from "./crypto";
+
 // Auth
 export { mechStorageAdapter } from "./auth";
 export type { MechStorageAdapterConfig } from "./auth";
