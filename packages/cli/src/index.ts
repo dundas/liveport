@@ -1,5 +1,13 @@
-// CLI entry point - will be implemented in TASK-013
+/**
+ * LivePort CLI
+ *
+ * Command-line interface for creating secure localhost tunnels.
+ */
+
 import { Command } from "commander";
+import { connectCommand } from "./commands/connect";
+import { statusCommand } from "./commands/status";
+import { disconnectCommand } from "./commands/disconnect";
 
 const program = new Command();
 
@@ -12,24 +20,19 @@ program
   .command("connect <port>")
   .description("Create a tunnel to expose a local port")
   .option("-k, --key <key>", "Bridge key for authentication")
-  .option("-r, --region <region>", "Server region", "us-east")
-  .action((_port, _options) => {
-    console.log("Connect command - will be implemented in TASK-013");
-  });
+  .option("-s, --server <url>", "Tunnel server URL")
+  .option("-r, --region <region>", "Server region")
+  .action(connectCommand);
 
 program
   .command("status")
-  .description("Show active tunnels")
-  .action(() => {
-    console.log("Status command - will be implemented in TASK-013");
-  });
+  .description("Show current tunnel status")
+  .action(statusCommand);
 
 program
   .command("disconnect")
-  .description("Disconnect active tunnels")
+  .description("Disconnect active tunnel")
   .option("-a, --all", "Disconnect all tunnels")
-  .action((_options) => {
-    console.log("Disconnect command - will be implemented in TASK-013");
-  });
+  .action(disconnectCommand);
 
 program.parse();
