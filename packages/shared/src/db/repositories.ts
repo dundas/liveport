@@ -302,6 +302,30 @@ export class BridgeKeyRepository {
   }
 
   /**
+   * Find a bridge key by its hash (for key validation in tunnel server)
+   */
+  async findByKeyHash(keyHash: string): Promise<BridgeKey | null> {
+    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
+      limit: 100,
+    });
+    const record = records.find((r) => r.key_hash === keyHash);
+    if (!record) {
+      return null;
+    }
+    return rowToBridgeKey(record);
+  }
+
+  /**
+   * Update last used timestamp for a bridge key
+   */
+  async updateLastUsed(id: string): Promise<void> {
+    await this.db.update<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, id, {
+      last_used_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  /**
    * Find all bridge keys for a user
    */
   async findByUserId(

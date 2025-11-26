@@ -1,9 +1,21 @@
 #!/usr/bin/env node
+/**
+ * Test script for mech-storage query endpoint
+ *
+ * Usage: Set environment variables and run:
+ *   MECH_APPS_APP_ID=xxx MECH_APPS_API_KEY=xxx node scripts/test-query.js
+ */
 const https = require('https');
 
-const APP_ID = 'app_eb320de3-41b0-416c-8427-e61c48429efc';
-const API_KEY = 'ak_0d10730c-b15b-4179-aa20-55e5a3448d3a';
-const BASE_URL = 'storage.mechdna.net';
+const APP_ID = process.env.MECH_APPS_APP_ID;
+const API_KEY = process.env.MECH_APPS_API_KEY;
+const BASE_URL = process.env.MECH_APPS_BASE_URL || 'storage.mechdna.net';
+
+if (!APP_ID || !API_KEY) {
+  console.error('Error: MECH_APPS_APP_ID and MECH_APPS_API_KEY environment variables required');
+  console.error('Usage: MECH_APPS_APP_ID=xxx MECH_APPS_API_KEY=xxx node scripts/test-query.js');
+  process.exit(1);
+}
 
 // Test GET records from bridge_keys table
 const options = {

@@ -1,12 +1,19 @@
 /**
  * Bridge Key Validator
  *
- * Validates bridge keys for tunnel connections.
+ * Validates bridge keys for tunnel connections using the mech-storage database.
  */
 
-import { getKeyPrefix, isValidKeyFormat } from "@liveport/shared";
+import {
+  getKeyPrefix,
+  isValidKeyFormat,
+  MechStorageClient,
+  BridgeKeyRepository,
+  type BridgeKey,
+} from "@liveport/shared";
 
 // Simple hash function (same as in dashboard API)
+// TODO: Migrate to bcrypt/argon2 for production
 async function hashKey(key: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(key);
@@ -27,22 +34,60 @@ export interface KeyValidationResult {
   errorCode?: string;
 }
 
-export interface BridgeKeyRecord {
-  id: string;
-  userId: string;
-  keyHash: string;
-  keyPrefix: string;
-  status: "active" | "revoked" | "expired";
-  expiresAt: Date;
-  maxUses: number | null;
-  currentUses: number;
-  allowedPort: number | null;
+export interface KeyValidatorConfig {
+  appId: string;
+  apiKey: string;
+  baseUrl?: string;
 }
 
-// For MVP, we'll use a mock validator that accepts any valid-format key
-// In production, this should query the database
+/**
+ * Bridge Key Validator with real database lookups
+ */
 export class KeyValidator {
-  private mockKeys: Map<string, BridgeKeyRecord> = new Map();
+  private db: MechStorageClient;
+  private repo: BridgeKeyRepository;
+  private initialized: boolean = false;
+
+  constructor(config?: KeyValidatorConfig) {
+    // Initialize database client if config provided
+    if (config) {
+      this.db = new MechStorageClient({
+        appId: config.appId,
+        apiKey: config.apiKey,
+        baseUrl: config.baseUrl,
+      });
+      this.repo = new BridgeKeyRepository(this.db);
+      this.initialized = true;
+    } else {
+      // Try to initialize from environment variables
+      const appId = process.env.MECH_APPS_APP_ID;
+      const apiKey = process.env.MECH_APPS_API_KEY;
+
+      if (appId && apiKey) {
+        this.db = new MechStorageClient({
+          appId,
+          apiKey,
+          baseUrl: process.env.MECH_APPS_BASE_URL,
+        });
+        this.repo = new BridgeKeyRepository(this.db);
+        this.initialized = true;
+      } else {
+        // Create placeholder - will fail if validate() called
+        this.db = null as unknown as MechStorageClient;
+        this.repo = null as unknown as BridgeKeyRepository;
+        console.warn(
+          "[KeyValidator] Database not configured. Set MECH_APPS_APP_ID and MECH_APPS_API_KEY."
+        );
+      }
+    }
+  }
+
+  /**
+   * Check if validator is properly initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
 
   /**
    * Validate key format
@@ -52,44 +97,13 @@ export class KeyValidator {
   }
 
   /**
-   * Add a key to the mock database (for testing)
-   */
-  async addMockKey(
-    rawKey: string,
-    userId: string,
-    options: {
-      expiresAt?: Date;
-      maxUses?: number;
-      allowedPort?: number;
-    } = {}
-  ): Promise<BridgeKeyRecord> {
-    const keyHash = await hashKey(rawKey);
-    const keyPrefix = getKeyPrefix(rawKey);
-
-    const record: BridgeKeyRecord = {
-      id: crypto.randomUUID(),
-      userId,
-      keyHash,
-      keyPrefix,
-      status: "active",
-      expiresAt: options.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000),
-      maxUses: options.maxUses ?? null,
-      currentUses: 0,
-      allowedPort: options.allowedPort ?? null,
-    };
-
-    this.mockKeys.set(keyHash, record);
-    return record;
-  }
-
-  /**
-   * Validate a bridge key
+   * Validate a bridge key against the database
    */
   async validate(
     key: string,
     requestedPort: number
   ): Promise<KeyValidationResult> {
-    // Check format
+    // Check format first
     if (!this.isValidFormat(key)) {
       return {
         valid: false,
@@ -98,18 +112,11 @@ export class KeyValidator {
       };
     }
 
-    // Hash the key
-    const keyHash = await hashKey(key);
-
-    // Look up in mock database
-    const record = this.mockKeys.get(keyHash);
-
-    // For MVP development mode, accept any valid-format key
-    // This allows testing without setting up full auth flow
-    if (!record) {
-      // In development, create a temporary "dev" key
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[KeyValidator] Development mode: accepting unregistered key");
+    // Check if database is initialized
+    if (!this.initialized) {
+      // Development fallback - only if explicitly allowed
+      if (process.env.ALLOW_DEV_KEYS === "true" && process.env.NODE_ENV !== "production") {
+        console.warn("[KeyValidator] Development mode: accepting unregistered key (ALLOW_DEV_KEYS=true)");
         return {
           valid: true,
           keyId: "dev-key",
@@ -123,13 +130,40 @@ export class KeyValidator {
 
       return {
         valid: false,
-        error: "Key not found",
+        error: "Key validation service unavailable",
+        errorCode: "SERVICE_UNAVAILABLE",
+      };
+    }
+
+    // Hash the key for lookup
+    const keyHash = await hashKey(key);
+
+    // Look up in database
+    let record: BridgeKey | null;
+    try {
+      record = await this.repo.findByKeyHash(keyHash);
+    } catch (error) {
+      console.error("[KeyValidator] Database lookup failed:", error);
+      return {
+        valid: false,
+        error: "Key validation failed",
+        errorCode: "VALIDATION_ERROR",
+      };
+    }
+
+    // Key not found
+    if (!record) {
+      console.log(`[KeyValidator] Key not found: ${getKeyPrefix(key)}...`);
+      return {
+        valid: false,
+        error: "Invalid key",
         errorCode: "INVALID_KEY",
       };
     }
 
     // Check status
     if (record.status === "revoked") {
+      console.log(`[KeyValidator] Key revoked: ${record.keyPrefix}`);
       return {
         valid: false,
         error: "Key has been revoked",
@@ -137,8 +171,24 @@ export class KeyValidator {
       };
     }
 
-    // Check expiration
-    if (record.expiresAt < new Date()) {
+    if (record.status === "expired") {
+      console.log(`[KeyValidator] Key expired: ${record.keyPrefix}`);
+      return {
+        valid: false,
+        error: "Key has expired",
+        errorCode: "KEY_EXPIRED",
+      };
+    }
+
+    // Check expiration date
+    if (record.expiresAt && record.expiresAt < new Date()) {
+      console.log(`[KeyValidator] Key past expiration: ${record.keyPrefix}`);
+      // Update status in database
+      try {
+        await this.repo.update(record.id, { status: "expired" });
+      } catch (e) {
+        console.error("[KeyValidator] Failed to update key status:", e);
+      }
       return {
         valid: false,
         error: "Key has expired",
@@ -147,7 +197,8 @@ export class KeyValidator {
     }
 
     // Check usage limit
-    if (record.maxUses !== null && record.currentUses >= record.maxUses) {
+    if (record.maxUses !== undefined && record.currentUses >= record.maxUses) {
+      console.log(`[KeyValidator] Key max uses reached: ${record.keyPrefix}`);
       return {
         valid: false,
         error: "Key has reached maximum uses",
@@ -156,7 +207,8 @@ export class KeyValidator {
     }
 
     // Check port restriction
-    if (record.allowedPort !== null && record.allowedPort !== requestedPort) {
+    if (record.allowedPort !== undefined && record.allowedPort !== requestedPort) {
+      console.log(`[KeyValidator] Port mismatch: ${record.keyPrefix} allows ${record.allowedPort}, requested ${requestedPort}`);
       return {
         valid: false,
         error: `Key only allows port ${record.allowedPort}`,
@@ -164,17 +216,25 @@ export class KeyValidator {
       };
     }
 
-    // Increment usage
-    record.currentUses++;
+    // Increment usage count and update last used
+    try {
+      await this.repo.incrementUseCount(record.id);
+      await this.repo.updateLastUsed(record.id);
+    } catch (e) {
+      console.error("[KeyValidator] Failed to update usage count:", e);
+      // Don't fail validation for this
+    }
+
+    console.log(`[KeyValidator] Key validated: ${record.keyPrefix} (user: ${record.userId})`);
 
     return {
       valid: true,
       keyId: record.id,
       userId: record.userId,
       expiresAt: record.expiresAt,
-      maxUses: record.maxUses ?? undefined,
-      currentUses: record.currentUses,
-      allowedPort: record.allowedPort,
+      maxUses: record.maxUses,
+      currentUses: record.currentUses + 1,
+      allowedPort: record.allowedPort ?? null,
     };
   }
 
@@ -182,12 +242,19 @@ export class KeyValidator {
    * Decrement usage count (on disconnect)
    */
   async decrementUsage(keyId: string): Promise<void> {
-    // Find by ID and decrement
-    for (const record of this.mockKeys.values()) {
-      if (record.id === keyId && record.currentUses > 0) {
-        record.currentUses--;
-        break;
+    if (!this.initialized || keyId === "dev-key") {
+      return;
+    }
+
+    try {
+      const record = await this.repo.findById(keyId);
+      if (record && record.currentUses > 0) {
+        await this.repo.update(keyId, {
+          currentUses: record.currentUses - 1,
+        });
       }
+    } catch (e) {
+      console.error("[KeyValidator] Failed to decrement usage:", e);
     }
   }
 }
@@ -195,9 +262,16 @@ export class KeyValidator {
 // Singleton instance
 let validatorInstance: KeyValidator | null = null;
 
-export function getKeyValidator(): KeyValidator {
+export function getKeyValidator(config?: KeyValidatorConfig): KeyValidator {
   if (!validatorInstance) {
-    validatorInstance = new KeyValidator();
+    validatorInstance = new KeyValidator(config);
   }
   return validatorInstance;
+}
+
+/**
+ * Reset the validator instance (useful for testing)
+ */
+export function resetKeyValidator(): void {
+  validatorInstance = null;
 }
