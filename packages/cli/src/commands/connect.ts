@@ -7,10 +7,11 @@
 import ora from "ora";
 import { TunnelClient } from "../tunnel-client";
 import { logger } from "../logger";
+import { getConfigValue } from "../config";
 import type { ConnectOptions } from "../types";
 
 // Default server URL
-const DEFAULT_SERVER_URL = process.env.LIVEPORT_SERVER_URL || "https://tunnel.liveport.dev";
+const DEFAULT_SERVER_URL = "https://tunnel.liveport.dev";
 
 // Active client reference for graceful shutdown
 let activeClient: TunnelClient | null = null;
@@ -30,17 +31,17 @@ export async function connectCommand(
     process.exit(1);
   }
 
-  // Get bridge key
-  const bridgeKey = options.key || process.env.LIVEPORT_KEY;
+  // Get bridge key (priority: CLI option > env var > config file)
+  const bridgeKey = getConfigValue("key", options.key, "LIVEPORT_KEY");
   if (!bridgeKey) {
-    logger.error("Bridge key required. Use --key or set LIVEPORT_KEY environment variable.");
+    logger.error("Bridge key required. Use --key, set LIVEPORT_KEY, or run 'liveport config set key <your-key>'");
     logger.blank();
     logger.info("Get a bridge key at: https://app.liveport.dev/keys");
     process.exit(1);
   }
 
-  // Get server URL
-  const serverUrl = options.server || DEFAULT_SERVER_URL;
+  // Get server URL (priority: CLI option > env var > config file > default)
+  const serverUrl = getConfigValue("server", options.server, "LIVEPORT_SERVER_URL") || DEFAULT_SERVER_URL;
 
   // Print banner
   logger.banner();

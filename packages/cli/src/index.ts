@@ -8,6 +8,7 @@ import { Command } from "commander";
 import { connectCommand } from "./commands/connect";
 import { statusCommand } from "./commands/status";
 import { disconnectCommand } from "./commands/disconnect";
+import { configSetCommand, configGetCommand, configListCommand, configDeleteCommand } from "./commands/config";
 
 const program = new Command();
 
@@ -34,5 +35,30 @@ program
   .description("Disconnect active tunnel")
   .option("-a, --all", "Disconnect all tunnels")
   .action(disconnectCommand);
+
+// Config command group
+const config = program
+  .command("config")
+  .description("Manage CLI configuration");
+
+config
+  .command("set <key> <value>")
+  .description("Set a config value (key, server)")
+  .action(configSetCommand);
+
+config
+  .command("get <key>")
+  .description("Get a config value")
+  .action(configGetCommand);
+
+config
+  .command("list")
+  .description("List all config values")
+  .action(configListCommand);
+
+config
+  .command("delete <key>")
+  .description("Delete a config value")
+  .action(configDeleteCommand);
 
 program.parse();
