@@ -16,13 +16,15 @@ export type User = z.infer<typeof userSchema>;
 export const bridgeKeySchema = z.object({
   id: z.string().uuid(),
   userId: z.string().uuid(),
+  name: z.string(),
   keyHash: z.string(),
   keyPrefix: z.string().max(12),
-  expiresAt: z.date(),
+  expiresAt: z.date().optional(),
   maxUses: z.number().int().positive().optional(),
   currentUses: z.number().int().nonnegative().default(0),
   allowedPort: z.number().int().min(1).max(65535).optional(),
   status: z.enum(["active", "revoked", "expired"]).default("active"),
+  lastUsedAt: z.date().optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -31,7 +33,8 @@ export type BridgeKey = z.infer<typeof bridgeKeySchema>;
 
 // Create bridge key input
 export const createBridgeKeySchema = z.object({
-  expiresIn: z.enum(["1h", "6h", "24h", "7d", "30d"]).default("6h"),
+  name: z.string().min(1).max(100).default("API Key"),
+  expiresInDays: z.number().int().positive().optional(),
   maxUses: z.number().int().positive().optional(),
   allowedPort: z.number().int().min(1).max(65535).optional(),
 });

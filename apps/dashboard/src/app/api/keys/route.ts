@@ -39,13 +39,14 @@ export async function GET() {
     // Transform keys for response (never expose key_hash)
     const responseKeys = keys.map((k: BridgeKey) => ({
       id: k.id,
-      name: k.keyPrefix, // Use prefix as display name for now
+      name: k.name,
       prefix: k.keyPrefix,
       status: k.status,
-      expiresAt: k.expiresAt.toISOString(),
+      expiresAt: k.expiresAt?.toISOString() || null,
       maxUses: k.maxUses,
       currentUses: k.currentUses,
       allowedPort: k.allowedPort,
+      lastUsedAt: k.lastUsedAt?.toISOString() || null,
       createdAt: k.createdAt.toISOString(),
       updatedAt: k.updatedAt.toISOString(),
     }));
@@ -76,23 +77,21 @@ export async function POST(request: NextRequest) {
     // Parse request body
     const body = await request.json();
     const {
-      expiresIn = "6h", // 1h, 6h, 24h, 7d
+      name = "API Key",
+      expiresInDays,
       maxUses,
       allowedPort,
     } = body as {
-      expiresIn?: "1h" | "6h" | "24h" | "7d";
+      name?: string;
+      expiresInDays?: number;
       maxUses?: number;
       allowedPort?: number;
     };
 
-    // Calculate expiration
-    const expirationMap: Record<string, number> = {
-      "1h": 60 * 60 * 1000,
-      "6h": 6 * 60 * 60 * 1000,
-      "24h": 24 * 60 * 60 * 1000,
-      "7d": 7 * 24 * 60 * 60 * 1000,
-    };
-    const expiresAt = new Date(Date.now() + (expirationMap[expiresIn] || expirationMap["6h"]));
+    // Calculate expiration (optional - keys can be non-expiring)
+    const expiresAt = expiresInDays
+      ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
+      : undefined;
 
     // Generate the bridge key
     const rawKey = generateBridgeKey();
@@ -103,6 +102,7 @@ export async function POST(request: NextRequest) {
     const repo = getBridgeKeyRepository();
     const created = await repo.create({
       userId: session.user.id,
+      name,
       keyHash,
       keyPrefix,
       expiresAt,
@@ -114,8 +114,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       key: rawKey, // Only returned on creation!
       id: created.id,
+      name: created.name,
       prefix: created.keyPrefix,
-      expiresAt: created.expiresAt.toISOString(),
+      expiresAt: created.expiresAt?.toISOString() || null,
       maxUses: created.maxUses,
       allowedPort: created.allowedPort,
       createdAt: created.createdAt.toISOString(),

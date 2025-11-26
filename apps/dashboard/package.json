@@ -4,7 +4,8 @@
   "private": true,
   "description": "LivePort Dashboard - Web application for managing tunnels and keys",
   "scripts": {
-    "dev": "next dev --port 3001",
+    "dev": "next dev --port $(node ../../scripts/find-port.js 3001)",
+    "dev:fixed": "next dev --port 3001",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

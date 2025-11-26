@@ -11,11 +11,20 @@ export * from "./keys";
 
 // Auth
 export { mechStorageAdapter } from "./auth";
-export type { Adapter } from "./auth";
+export type { MechStorageAdapterConfig } from "./auth";
 
 // Re-export specific modules for direct imports
 export { getDatabase, initDatabase, MechStorageClient, DatabaseError } from "./db";
 export { BridgeKeyRepository, TunnelRepository, UserRepository, createRepositories } from "./db";
+export {
+  TABLE_NAMES,
+  initializeSchema,
+  checkTablesExist,
+  createAllTables,
+  createAuthTables,
+  createBridgeKeysTable,
+  createTunnelsTable,
+} from "./db";
 export type { DatabaseConfig, CreateBridgeKeyInput, UpdateBridgeKeyInput, CreateTunnelInput, UpdateTunnelInput } from "./db";
 
 export {

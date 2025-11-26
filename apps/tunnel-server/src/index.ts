@@ -7,6 +7,7 @@
 
 import { serve } from "@hono/node-server";
 import { WebSocketServer, WebSocket } from "ws";
+import { fileURLToPath } from "url";
 import { createHttpHandler } from "./http-handler";
 import { handleConnection } from "./websocket-handler";
 import { getConnectionManager } from "./connection-manager";
@@ -14,7 +15,7 @@ import type { TunnelServerConfig } from "./types";
 
 // Default configuration
 const defaultConfig: TunnelServerConfig = {
-  port: parseInt(process.env.PORT || "3001", 10),
+  port: parseInt(process.env.PORT || "8080", 10),
   host: process.env.HOST || "0.0.0.0",
   baseDomain: process.env.BASE_DOMAIN || "liveport.dev",
   connectionTimeout: 30000,
@@ -136,8 +137,9 @@ export function startServer(config: Partial<TunnelServerConfig> = {}): void {
   process.on("SIGINT", shutdown);
 }
 
-// Start server if running directly
-if (require.main === module) {
+// Start server if running directly (ESM compatible)
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) {
   startServer();
 }
 
