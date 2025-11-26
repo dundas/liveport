@@ -21,7 +21,10 @@
     "vitest": "^2.0.0"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.6",
     "@liveport/shared": "workspace:*",
+    "hono": "^4.10.7",
+    "nanoid": "^5.0.0",
     "ws": "^8.16.0"
   }
 }
