@@ -1,0 +1,50 @@
+{
+  "name": "@liveport/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared utilities and types for LivePort",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "import": "./dist/db/index.mjs",
+      "require": "./dist/db/index.js"
+    },
+    "./redis": {
+      "types": "./dist/redis/index.d.ts",
+      "import": "./dist/redis/index.mjs",
+      "require": "./dist/redis/index.js"
+    },
+    "./keys": {
+      "types": "./dist/keys/index.d.ts",
+      "import": "./dist/keys/index.mjs",
+      "require": "./dist/keys/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "ioredis": "^5.3.0",
+    "nanoid": "^5.0.0",
+    "zod": "^3.22.0"
+  }
+}

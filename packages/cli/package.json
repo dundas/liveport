@@ -1,0 +1,47 @@
+{
+  "name": "@liveport/cli",
+  "version": "0.1.0",
+  "description": "CLI client for LivePort - secure localhost tunnels for AI agents",
+  "bin": {
+    "liveport": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "cli",
+    "tunnel",
+    "localhost",
+    "liveport",
+    "ai-agents"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/liveport"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "@liveport/shared": "workspace:*",
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "ora": "^8.0.0",
+    "ws": "^8.16.0"
+  }
+}

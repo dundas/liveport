@@ -1,0 +1,15 @@
+{
+  "name": "@liveport/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LivePort Dashboard - Web application for managing tunnels and keys",
+  "scripts": {
+    "dev": "echo 'Dashboard will be scaffolded in TASK-004'",
+    "build": "echo 'Dashboard will be scaffolded in TASK-004'",
+    "lint": "echo 'Dashboard will be scaffolded in TASK-004'",
+    "test": "echo 'Dashboard will be scaffolded in TASK-004'"
+  },
+  "dependencies": {
+    "@liveport/shared": "workspace:*"
+  }
+}
