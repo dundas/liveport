@@ -17,6 +17,43 @@ import type {
 import { CloseCodes, ErrorCodes } from "./types";
 import { getConnectionManager } from "./connection-manager";
 import { getKeyValidator } from "./key-validator";
+import {
+  createRedisClient,
+  createRateLimiter,
+  RateLimitPresets,
+  type RateLimiter,
+} from "@liveport/shared";
+
+// Rate limiter instance (initialized lazily)
+let rateLimiter: RateLimiter | null = null;
+
+/**
+ * Get or create the rate limiter instance
+ */
+async function getRateLimiter(): Promise<RateLimiter | null> {
+  if (rateLimiter) {
+    return rateLimiter;
+  }
+
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    console.warn("[RateLimiter] REDIS_URL not configured, rate limiting disabled");
+    return null;
+  }
+
+  try {
+    const redis = createRedisClient({ url: redisUrl });
+    rateLimiter = createRateLimiter(redis, {
+      ...RateLimitPresets.websocket,
+      keyPrefix: "tunnel:ratelimit",
+    });
+    console.log("[RateLimiter] Initialized with Redis");
+    return rateLimiter;
+  } catch (error) {
+    console.error("[RateLimiter] Failed to initialize:", error);
+    return null;
+  }
+}
 
 const DEFAULT_BASE_DOMAIN = process.env.BASE_DOMAIN || "liveport.dev";
 
@@ -86,6 +123,29 @@ export async function handleConnection(
   let heartbeatTimer: NodeJS.Timeout | null = null;
 
   console.log(`[WebSocket] New connection attempt (port=${localPort})`);
+
+  // Rate limiting check (by IP or key prefix)
+  const limiter = await getRateLimiter();
+  if (limiter) {
+    // Use key prefix as rate limit identifier (first 8 chars)
+    const keyPrefix = bridgeKey.substring(0, 8);
+    const rateLimitResult = await limiter.increment(keyPrefix);
+
+    if (!rateLimitResult.allowed) {
+      const retryAfterSecs = Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000);
+      console.log(`[WebSocket] Rate limited: ${keyPrefix}... (retry after ${retryAfterSecs}s)`);
+      sendError(
+        socket,
+        ErrorCodes.RATE_LIMITED,
+        `Rate limit exceeded. Retry after ${retryAfterSecs} seconds.`,
+        true,
+        CloseCodes.RATE_LIMITED
+      );
+      return;
+    }
+
+    console.log(`[WebSocket] Rate limit check passed: ${rateLimitResult.remaining}/${rateLimitResult.limit} remaining`);
+  }
 
   // Validate the bridge key
   const validation = await keyValidator.validate(bridgeKey, localPort);

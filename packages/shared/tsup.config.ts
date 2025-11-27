@@ -7,6 +7,7 @@ export default defineConfig({
     "redis/index": "src/redis/index.ts",
     "keys/index": "src/keys/index.ts",
     "auth/index": "src/auth/index.ts",
+    "crypto/index": "src/crypto/index.ts",
   },
   format: ["cjs", "esm"],
   dts: true,

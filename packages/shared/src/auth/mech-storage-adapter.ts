@@ -1,10 +1,11 @@
 /**
  * Better Auth Adapter for Mech-Storage
  *
- * Implements the Better Auth database adapter interface using the mech-storage API.
+ * Implements the Better Auth database adapter interface using the mech-storage REST API.
+ * Uses createAdapterFactory for proper integration with Better Auth.
  */
 
-import type { Adapter, Where } from "better-auth";
+import { createAdapterFactory } from "better-auth/adapters";
 import type { MechStorageClient } from "../db/index.js";
 
 // Map Better Auth table names to our table names
@@ -47,211 +48,268 @@ function keysToCamelCase<T extends Record<string, unknown>>(
   return result;
 }
 
-// Build SQL WHERE clause from Better Auth Where conditions
-function buildWhereClause(
-  where: Where[],
-  startIndex = 1
-): { clause: string; params: unknown[] } {
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-  let paramIndex = startIndex;
+interface WhereClause {
+  field: string;
+  value: unknown;
+  operator?: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "not_in" | "contains" | "starts_with" | "ends_with";
+  connector?: "AND" | "OR";
+}
 
-  for (const condition of where) {
-    const field = toSnakeCase(condition.field);
+// Check if a record matches where conditions
+function matchesWhere(record: Record<string, unknown>, where: WhereClause[]): boolean {
+  if (!where || where.length === 0) return true;
 
-    if (condition.operator === "eq" || !condition.operator) {
-      conditions.push(`${field} = $${paramIndex}`);
-      params.push(condition.value);
-      paramIndex++;
-    } else if (condition.operator === "ne") {
-      conditions.push(`${field} != $${paramIndex}`);
-      params.push(condition.value);
-      paramIndex++;
-    } else if (condition.operator === "gt") {
-      conditions.push(`${field} > $${paramIndex}`);
-      params.push(condition.value);
-      paramIndex++;
-    } else if (condition.operator === "gte") {
-      conditions.push(`${field} >= $${paramIndex}`);
-      params.push(condition.value);
-      paramIndex++;
-    } else if (condition.operator === "lt") {
-      conditions.push(`${field} < $${paramIndex}`);
-      params.push(condition.value);
-      paramIndex++;
-    } else if (condition.operator === "lte") {
-      conditions.push(`${field} <= $${paramIndex}`);
-      params.push(condition.value);
-      paramIndex++;
-    } else if (condition.operator === "in") {
-      const values = condition.value as unknown[];
-      const placeholders = values.map(() => `$${paramIndex++}`);
-      conditions.push(`${field} IN (${placeholders.join(", ")})`);
-      params.push(...values);
-    } else if (condition.operator === "contains") {
-      conditions.push(`${field} LIKE $${paramIndex}`);
-      params.push(`%${condition.value}%`);
-      paramIndex++;
-    } else if (condition.operator === "starts_with") {
-      conditions.push(`${field} LIKE $${paramIndex}`);
-      params.push(`${condition.value}%`);
-      paramIndex++;
-    } else if (condition.operator === "ends_with") {
-      conditions.push(`${field} LIKE $${paramIndex}`);
-      params.push(`%${condition.value}`);
-      paramIndex++;
+  let result = evaluateClause(record, where[0]);
+
+  for (let i = 1; i < where.length; i++) {
+    const clause = where[i];
+    const clauseResult = evaluateClause(record, clause);
+
+    if (clause.connector === "OR") {
+      result = result || clauseResult;
+    } else {
+      result = result && clauseResult;
     }
   }
 
-  return {
-    clause: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "",
-    params,
-  };
+  return result;
+}
+
+function evaluateClause(record: Record<string, unknown>, clause: WhereClause): boolean {
+  const field = toSnakeCase(clause.field);
+  const value = record[field];
+
+  switch (clause.operator) {
+    case "in":
+      if (!Array.isArray(clause.value)) return false;
+      return (clause.value as unknown[]).includes(value);
+    case "not_in":
+      if (!Array.isArray(clause.value)) return false;
+      return !(clause.value as unknown[]).includes(value);
+    case "contains":
+      return String(value).includes(String(clause.value));
+    case "starts_with":
+      return String(value).startsWith(String(clause.value));
+    case "ends_with":
+      return String(value).endsWith(String(clause.value));
+    case "ne":
+      return value !== clause.value;
+    case "gt":
+      return clause.value != null && (value as number) > (clause.value as number);
+    case "gte":
+      return clause.value != null && (value as number) >= (clause.value as number);
+    case "lt":
+      return clause.value != null && (value as number) < (clause.value as number);
+    case "lte":
+      return clause.value != null && (value as number) <= (clause.value as number);
+    default: // "eq" or undefined
+      return value === clause.value;
+  }
+}
+
+interface MechStorageAdapterConfig {
+  debugLogs?: boolean;
 }
 
 /**
  * Create a Better Auth adapter for mech-storage
  */
-export function mechStorageAdapter(db: MechStorageClient): Adapter {
-  return {
-    id: "mech-storage",
-
-    create: async <T extends Record<string, unknown>, R = T>({ model, data }: { model: string; data: Omit<T, "id">; select?: string[]; forceAllowId?: boolean }): Promise<R> => {
-      const table = TABLE_MAP[model] || model;
-      const snakeData = keysToSnakeCase(data as Record<string, unknown>);
-
-      const result = await db.insert(table, snakeData);
-      if (result.length === 0) {
-        throw new Error(`Failed to create ${model}`);
-      }
-      return keysToCamelCase(result[0] as Record<string, unknown>) as R;
+export const mechStorageAdapter = (db: MechStorageClient, config?: MechStorageAdapterConfig) => {
+  const adapterCreator = createAdapterFactory({
+    config: {
+      adapterId: "mech-storage",
+      adapterName: "Mech Storage Adapter",
+      usePlural: false,
+      debugLogs: config?.debugLogs ?? false,
+      supportsJSON: true,
+      supportsDates: true,
+      supportsBooleans: true,
+      supportsNumericIds: false,
     },
+    adapter: ({ getModelName }) => {
+      const getTable = (model: string): string => {
+        const modelName = getModelName(model);
+        return TABLE_MAP[modelName] || modelName;
+      };
 
-    findOne: async <T>({ model, where, select }: { model: string; where: Where[]; select?: string[] }): Promise<T | null> => {
-      const table = TABLE_MAP[model] || model;
-      const { clause, params } = buildWhereClause(where);
+      return {
+        create: async ({ model, data }) => {
+          const table = getTable(model);
+          const snakeData = keysToSnakeCase(data as Record<string, unknown>);
 
-      const selectFields = select
-        ? select.map(toSnakeCase).join(", ")
-        : "*";
+          // Generate ID if not provided
+          if (!snakeData.id) {
+            snakeData.id = crypto.randomUUID();
+          }
 
-      const sql = `SELECT ${selectFields} FROM "${table}" ${clause} LIMIT 1`;
-      const result = await db.query<Record<string, unknown>>(sql, params);
+          const result = await db.insert(table, snakeData);
+          if (!result || result.length === 0) {
+            throw new Error(`Failed to create record in ${model}`);
+          }
+          // The factory handles type transformation
+          return keysToCamelCase(result[0] as Record<string, unknown>) as typeof data;
+        },
 
-      if (result.rows.length === 0) {
-        return null;
-      }
+        findOne: async ({ model, where }) => {
+          const table = getTable(model);
+          const whereArr = where as WhereClause[];
 
-      return keysToCamelCase(result.rows[0]) as T;
+          // Check if we're searching by ID
+          const idCondition = whereArr.find(
+            (w) => w.field === "id" && (w.operator === "eq" || !w.operator)
+          );
+
+          if (idCondition) {
+            // Use direct ID lookup
+            const record = await db.getRecord(table, String(idCondition.value));
+            if (!record) return null;
+            return keysToCamelCase(record as Record<string, unknown>) as any;
+          }
+
+          // Otherwise, fetch all and filter
+          const { records } = await db.getRecords(table, { limit: 100 });
+
+          for (const record of records) {
+            if (matchesWhere(record as Record<string, unknown>, whereArr)) {
+              return keysToCamelCase(record as Record<string, unknown>) as any;
+            }
+          }
+
+          return null;
+        },
+
+        findMany: async ({ model, where, limit, offset, sortBy }) => {
+          const table = getTable(model);
+          const whereArr = (where || []) as WhereClause[];
+
+          const { records } = await db.getRecords(table, {
+            limit: limit || 100,
+            offset: offset || 0,
+            orderBy: sortBy ? toSnakeCase(sortBy.field) : undefined,
+            orderDir: sortBy?.direction?.toUpperCase() as "ASC" | "DESC" | undefined,
+          });
+
+          let filtered = records as Record<string, unknown>[];
+
+          // Apply where filters if present
+          if (whereArr.length > 0) {
+            filtered = filtered.filter((record) => matchesWhere(record, whereArr));
+          }
+
+          return filtered.map((row) => keysToCamelCase(row)) as any[];
+        },
+
+        update: async ({ model, where, update }) => {
+          const table = getTable(model);
+          const whereArr = where as WhereClause[];
+          const snakeData = keysToSnakeCase(update as Record<string, unknown>);
+
+          // Find the record to update
+          const idCondition = whereArr.find(
+            (w) => w.field === "id" && (w.operator === "eq" || !w.operator)
+          );
+
+          if (idCondition) {
+            // Direct ID update
+            const updated = await db.update(table, String(idCondition.value), snakeData);
+            return keysToCamelCase(updated as Record<string, unknown>) as typeof update;
+          }
+
+          // Find by other criteria first
+          const { records } = await db.getRecords(table, { limit: 100 });
+          const existing = records.find((r) =>
+            matchesWhere(r as Record<string, unknown>, whereArr)
+          );
+
+          if (!existing) return null;
+
+          const id = (existing as Record<string, unknown>).id as string;
+          const updated = await db.update(table, id, snakeData);
+          return keysToCamelCase(updated as Record<string, unknown>) as typeof update;
+        },
+
+        updateMany: async ({ model, where, update }) => {
+          const table = getTable(model);
+          const whereArr = (where || []) as WhereClause[];
+          const snakeData = keysToSnakeCase(update as Record<string, unknown>);
+
+          const { records } = await db.getRecords(table, { limit: 1000 });
+          const matching = records.filter((r) =>
+            matchesWhere(r as Record<string, unknown>, whereArr)
+          );
+
+          let count = 0;
+          for (const record of matching) {
+            const id = (record as Record<string, unknown>).id as string;
+            await db.update(table, id, snakeData);
+            count++;
+          }
+
+          return count;
+        },
+
+        delete: async ({ model, where }) => {
+          const table = getTable(model);
+          const whereArr = where as WhereClause[];
+
+          const idCondition = whereArr.find(
+            (w) => w.field === "id" && (w.operator === "eq" || !w.operator)
+          );
+
+          if (idCondition) {
+            await db.delete(table, String(idCondition.value));
+            return;
+          }
+
+          // Find by other criteria first
+          const { records } = await db.getRecords(table, { limit: 100 });
+          const existing = records.find((r) =>
+            matchesWhere(r as Record<string, unknown>, whereArr)
+          );
+
+          if (existing) {
+            await db.delete(table, (existing as Record<string, unknown>).id as string);
+          }
+        },
+
+        deleteMany: async ({ model, where }) => {
+          const table = getTable(model);
+          const whereArr = (where || []) as WhereClause[];
+
+          const { records } = await db.getRecords(table, { limit: 1000 });
+          const matching = records.filter((r) =>
+            matchesWhere(r as Record<string, unknown>, whereArr)
+          );
+
+          let count = 0;
+          for (const record of matching) {
+            await db.delete(table, (record as Record<string, unknown>).id as string);
+            count++;
+          }
+
+          return count;
+        },
+
+        count: async ({ model, where }) => {
+          const table = getTable(model);
+          const whereArr = (where || []) as WhereClause[];
+
+          if (whereArr.length === 0) {
+            const { total } = await db.getRecords(table, { limit: 1 });
+            return total;
+          }
+
+          // Get all and filter
+          const { records } = await db.getRecords(table, { limit: 1000 });
+          return records.filter((r) =>
+            matchesWhere(r as Record<string, unknown>, whereArr)
+          ).length;
+        },
+      };
     },
+  });
 
-    findMany: async <T>({ model, where, limit, offset, sortBy }: { model: string; where?: Where[]; limit?: number; offset?: number; sortBy?: { field: string; direction: "asc" | "desc" } }): Promise<T[]> => {
-      const table = TABLE_MAP[model] || model;
-      const { clause, params } = where ? buildWhereClause(where) : { clause: "", params: [] };
+  return adapterCreator;
+};
 
-      let sql = `SELECT * FROM "${table}" ${clause}`;
-
-      if (sortBy) {
-        const direction = sortBy.direction === "desc" ? "DESC" : "ASC";
-        sql += ` ORDER BY ${toSnakeCase(sortBy.field)} ${direction}`;
-      }
-
-      if (limit) {
-        sql += ` LIMIT ${limit}`;
-      }
-
-      if (offset) {
-        sql += ` OFFSET ${offset}`;
-      }
-
-      const result = await db.query<Record<string, unknown>>(sql, params);
-      return result.rows.map((row) => keysToCamelCase(row)) as T[];
-    },
-
-    update: async <T>({ model, where, update: updateData }: { model: string; where: Where[]; update: Record<string, unknown> }): Promise<T | null> => {
-      const table = TABLE_MAP[model] || model;
-      const snakeData = keysToSnakeCase(updateData as Record<string, unknown>);
-
-      // Build SET clause
-      const setEntries = Object.entries(snakeData);
-      const setClauses = setEntries.map((_, i) => `${setEntries[i][0]} = $${i + 1}`);
-      const setParams = setEntries.map(([, value]) => value);
-
-      // Build WHERE clause (starting from after SET params)
-      const { clause, params: whereParams } = buildWhereClause(
-        where,
-        setEntries.length + 1
-      );
-
-      const sql = `UPDATE "${table}" SET ${setClauses.join(", ")} ${clause} RETURNING *`;
-      const result = await db.query<Record<string, unknown>>(sql, [
-        ...setParams,
-        ...whereParams,
-      ]);
-
-      if (result.rows.length === 0) {
-        return null;
-      }
-
-      return keysToCamelCase(result.rows[0]) as T;
-    },
-
-    updateMany: async ({ model, where, update: updateData }: { model: string; where: Where[]; update: Record<string, unknown> }): Promise<number> => {
-      const table = TABLE_MAP[model] || model;
-      const snakeData = keysToSnakeCase(updateData as Record<string, unknown>);
-
-      // Build SET clause
-      const setEntries = Object.entries(snakeData);
-      const setClauses = setEntries.map((_, i) => `${setEntries[i][0]} = $${i + 1}`);
-      const setParams = setEntries.map(([, value]) => value);
-
-      // Build WHERE clause
-      const { clause, params: whereParams } = buildWhereClause(
-        where,
-        setEntries.length + 1
-      );
-
-      const sql = `UPDATE "${table}" SET ${setClauses.join(", ")} ${clause}`;
-      const result = await db.query(sql, [...setParams, ...whereParams]);
-
-      return result.rowCount;
-    },
-
-    delete: async ({ model, where }: { model: string; where: Where[] }): Promise<void> => {
-      const table = TABLE_MAP[model] || model;
-      const { clause, params } = buildWhereClause(where);
-
-      const sql = `DELETE FROM "${table}" ${clause}`;
-      await db.query(sql, params);
-    },
-
-    deleteMany: async ({ model, where }: { model: string; where: Where[] }): Promise<number> => {
-      const table = TABLE_MAP[model] || model;
-      const { clause, params } = buildWhereClause(where);
-
-      const sql = `DELETE FROM "${table}" ${clause}`;
-      const result = await db.query(sql, params);
-
-      return result.rowCount;
-    },
-
-    count: async ({ model, where }: { model: string; where?: Where[] }): Promise<number> => {
-      const table = TABLE_MAP[model] || model;
-      const { clause, params } = where ? buildWhereClause(where) : { clause: "", params: [] };
-
-      const sql = `SELECT COUNT(*) as count FROM "${table}" ${clause}`;
-      const result = await db.query<{ count: string }>(sql, params);
-
-      return parseInt(result.rows[0]?.count || "0", 10);
-    },
-
-    // Transaction support - mech-storage doesn't support transactions,
-    // so we execute operations sequentially
-    transaction: async <T>(callback: (adapter: Adapter) => Promise<T>): Promise<T> => {
-      // mech-storage doesn't support transactions, execute directly
-      return callback(mechStorageAdapter(db));
-    },
-  };
-}
-
-export type { Adapter };
+export type { MechStorageAdapterConfig };

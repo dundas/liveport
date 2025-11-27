@@ -88,6 +88,34 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
     });
   });
 
+  // API endpoint: Get tunnels by key ID (for Agent SDK)
+  app.get("/api/tunnels/by-key/:keyId", (c) => {
+    const keyId = c.req.param("keyId");
+    const apiSecret = c.req.header("x-api-secret");
+
+    // Validate internal API secret
+    const expectedSecret = process.env.INTERNAL_API_SECRET;
+    if (expectedSecret && apiSecret !== expectedSecret) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const tunnels = connectionManager.findByKeyId(keyId);
+    const baseDomain = cfg.baseDomain;
+
+    return c.json({
+      tunnels: tunnels.map((t) => ({
+        tunnelId: t.id,
+        subdomain: t.subdomain,
+        url: `https://${t.subdomain}.${baseDomain}`,
+        localPort: t.localPort,
+        state: t.state,
+        createdAt: t.createdAt.toISOString(),
+        expiresAt: t.expiresAt.toISOString(),
+        requestCount: t.requestCount,
+      })),
+    });
+  });
+
   // Catch-all handler for proxied requests
   app.all("*", async (c) => {
     const host = c.req.header("host") || "";

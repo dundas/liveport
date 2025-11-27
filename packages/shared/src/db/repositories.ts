@@ -2,18 +2,21 @@
  * Repository Classes for Database Operations
  *
  * Provides type-safe CRUD operations for Users, BridgeKeys, and Tunnels.
+ * Uses mech-storage REST API instead of raw SQL for automatic table namespacing.
  */
 
 import type { User, BridgeKey, Tunnel } from "../types/index.js";
-import type { MechStorageClient, QueryResult } from "./index.js";
+import type { MechStorageClient } from "./index.js";
 import { TABLE_NAMES } from "./schema.js";
 
-// Database row types (snake_case as stored in PostgreSQL)
+// Database row types (snake_case as stored in mech-storage)
 interface UserRow {
   id: string;
   email: string;
   name: string | null;
-  tier: string;
+  tier?: string;
+  email_verified?: boolean;
+  image?: string;
   created_at: string;
   updated_at: string;
 }
@@ -21,13 +24,15 @@ interface UserRow {
 interface BridgeKeyRow {
   id: string;
   user_id: string;
+  name: string;
   key_hash: string;
   key_prefix: string;
-  expires_at: string;
+  expires_at: string | null;
   max_uses: number | null;
   current_uses: number;
   allowed_port: number | null;
   status: string;
+  last_used_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,9 +66,10 @@ export interface UpdateUserInput {
 
 export interface CreateBridgeKeyInput {
   userId: string;
+  name: string;
   keyHash: string;
   keyPrefix: string;
-  expiresAt: Date;
+  expiresAt?: Date;
   maxUses?: number;
   allowedPort?: number;
 }
@@ -104,13 +110,15 @@ function rowToBridgeKey(row: BridgeKeyRow): BridgeKey {
   return {
     id: row.id,
     userId: row.user_id,
+    name: row.name,
     keyHash: row.key_hash,
     keyPrefix: row.key_prefix,
-    expiresAt: new Date(row.expires_at),
+    expiresAt: row.expires_at ? new Date(row.expires_at) : undefined,
     maxUses: row.max_uses || undefined,
     currentUses: row.current_uses,
     allowedPort: row.allowed_port || undefined,
     status: row.status as BridgeKey["status"],
+    lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : undefined,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -263,6 +271,7 @@ export class UserRepository {
 
 /**
  * Repository for BridgeKey operations
+ * Uses mech-storage REST API for automatic table namespacing
  */
 export class BridgeKeyRepository {
   constructor(private db: MechStorageClient) {}
@@ -271,28 +280,66 @@ export class BridgeKeyRepository {
    * Find a bridge key by ID
    */
   async findById(id: string): Promise<BridgeKey | null> {
-    const result = await this.db.query<BridgeKeyRow>(
-      `SELECT * FROM ${TABLE_NAMES.BRIDGE_KEYS} WHERE id = $1`,
-      [id]
-    );
-    if (result.rows.length === 0) {
+    const record = await this.db.getRecord<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, id);
+    if (!record) {
       return null;
     }
-    return rowToBridgeKey(result.rows[0]);
+    return rowToBridgeKey(record);
   }
 
   /**
    * Find a bridge key by its prefix (for validation)
    */
   async findByPrefix(keyPrefix: string): Promise<BridgeKey | null> {
-    const result = await this.db.query<BridgeKeyRow>(
-      `SELECT * FROM ${TABLE_NAMES.BRIDGE_KEYS} WHERE key_prefix = $1`,
-      [keyPrefix]
-    );
-    if (result.rows.length === 0) {
+    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
+      limit: 100,
+    });
+    const record = records.find((r) => r.key_prefix === keyPrefix);
+    if (!record) {
       return null;
     }
-    return rowToBridgeKey(result.rows[0]);
+    return rowToBridgeKey(record);
+  }
+
+  /**
+   * Find a bridge key by its hash (for legacy SHA-256 lookups)
+   * @deprecated Use findByKeyPrefix + verifyKey for bcrypt hashes
+   */
+  async findByKeyHash(keyHash: string): Promise<BridgeKey | null> {
+    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
+      limit: 100,
+    });
+    const record = records.find((r) => r.key_hash === keyHash);
+    if (!record) {
+      return null;
+    }
+    return rowToBridgeKey(record);
+  }
+
+  /**
+   * Find a bridge key by its prefix (for bcrypt verification)
+   * The prefix is the first 8 characters of the key, used to narrow down
+   * candidates before verifying with bcrypt.compare()
+   */
+  async findByKeyPrefix(keyPrefix: string): Promise<BridgeKey | null> {
+    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
+      limit: 100,
+    });
+    const record = records.find((r) => r.key_prefix === keyPrefix);
+    if (!record) {
+      return null;
+    }
+    return rowToBridgeKey(record);
+  }
+
+  /**
+   * Update last used timestamp for a bridge key
+   */
+  async updateLastUsed(id: string): Promise<void> {
+    await this.db.update<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, id, {
+      last_used_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
   }
 
   /**
@@ -305,23 +352,19 @@ export class BridgeKeyRepository {
     const limit = options?.limit || 50;
     const offset = options?.offset || 0;
 
-    const countResult = await this.db.query<{ count: string }>(
-      `SELECT COUNT(*) as count FROM ${TABLE_NAMES.BRIDGE_KEYS} WHERE user_id = $1`,
-      [userId]
-    );
-    const total = parseInt(countResult.rows[0]?.count || "0", 10);
+    const { records, total } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
+      limit: 100, // Get records for filtering (mech-storage may have limits)
+      orderBy: "created_at",
+      orderDir: "DESC",
+    });
 
-    const result = await this.db.query<BridgeKeyRow>(
-      `SELECT * FROM ${TABLE_NAMES.BRIDGE_KEYS}
-       WHERE user_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [userId, limit, offset]
-    );
+    // Filter by user_id client-side
+    const userRecords = records.filter((r) => r.user_id === userId);
+    const paginatedRecords = userRecords.slice(offset, offset + limit);
 
     return {
-      keys: result.rows.map(rowToBridgeKey),
-      total,
+      keys: paginatedRecords.map(rowToBridgeKey),
+      total: userRecords.length,
     };
   }
 
@@ -329,92 +372,87 @@ export class BridgeKeyRepository {
    * Find active bridge keys for a user
    */
   async findActiveByUserId(userId: string): Promise<BridgeKey[]> {
-    const result = await this.db.query<BridgeKeyRow>(
-      `SELECT * FROM ${TABLE_NAMES.BRIDGE_KEYS}
-       WHERE user_id = $1
-         AND status = 'active'
-         AND expires_at > NOW()
-       ORDER BY created_at DESC`,
-      [userId]
-    );
-    return result.rows.map(rowToBridgeKey);
+    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
+      limit: 100,
+      orderBy: "created_at",
+      orderDir: "DESC",
+    });
+
+    const now = new Date();
+    const activeRecords = records.filter((r) => {
+      if (r.user_id !== userId) return false;
+      if (r.status !== "active") return false;
+      if (r.expires_at && new Date(r.expires_at) <= now) return false;
+      return true;
+    });
+
+    return activeRecords.map(rowToBridgeKey);
   }
 
   /**
    * Create a new bridge key
    */
   async create(input: CreateBridgeKeyInput): Promise<BridgeKey> {
-    const result = await this.db.query<BridgeKeyRow>(
-      `INSERT INTO ${TABLE_NAMES.BRIDGE_KEYS}
-       (user_id, key_hash, key_prefix, expires_at, max_uses, allowed_port)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [
-        input.userId,
-        input.keyHash,
-        input.keyPrefix,
-        input.expiresAt.toISOString(),
-        input.maxUses || null,
-        input.allowedPort || null,
-      ]
-    );
-    return rowToBridgeKey(result.rows[0]);
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const record: Partial<BridgeKeyRow> = {
+      id,
+      user_id: input.userId,
+      name: input.name,
+      key_hash: input.keyHash,
+      key_prefix: input.keyPrefix,
+      expires_at: input.expiresAt?.toISOString() || null,
+      max_uses: input.maxUses || null,
+      current_uses: 0,
+      allowed_port: input.allowedPort || null,
+      status: "active",
+      last_used_at: null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    const result = await this.db.insert<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, record);
+    if (!result || result.length === 0) {
+      throw new Error("Failed to create bridge key");
+    }
+    return rowToBridgeKey(result[0]);
   }
 
   /**
    * Update a bridge key
    */
   async update(id: string, input: UpdateBridgeKeyInput): Promise<BridgeKey | null> {
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let paramIndex = 1;
+    const updateData: Partial<BridgeKeyRow> = {
+      updated_at: new Date().toISOString(),
+    };
 
     if (input.currentUses !== undefined) {
-      fields.push(`current_uses = $${paramIndex++}`);
-      values.push(input.currentUses);
+      updateData.current_uses = input.currentUses;
     }
     if (input.status !== undefined) {
-      fields.push(`status = $${paramIndex++}`);
-      values.push(input.status);
+      updateData.status = input.status;
     }
 
-    if (fields.length === 0) {
-      return this.findById(id);
-    }
-
-    fields.push(`updated_at = NOW()`);
-    values.push(id);
-
-    const result = await this.db.query<BridgeKeyRow>(
-      `UPDATE ${TABLE_NAMES.BRIDGE_KEYS}
-       SET ${fields.join(", ")}
-       WHERE id = $${paramIndex}
-       RETURNING *`,
-      values
-    );
-
-    if (result.rows.length === 0) {
+    const result = await this.db.update<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, id, updateData);
+    if (!result) {
       return null;
     }
-    return rowToBridgeKey(result.rows[0]);
+    return rowToBridgeKey(result);
   }
 
   /**
    * Increment the use count of a bridge key
    */
   async incrementUseCount(id: string): Promise<BridgeKey | null> {
-    const result = await this.db.query<BridgeKeyRow>(
-      `UPDATE ${TABLE_NAMES.BRIDGE_KEYS}
-       SET current_uses = current_uses + 1, updated_at = NOW()
-       WHERE id = $1
-       RETURNING *`,
-      [id]
-    );
-
-    if (result.rows.length === 0) {
+    const existing = await this.findById(id);
+    if (!existing) {
       return null;
     }
-    return rowToBridgeKey(result.rows[0]);
+
+    return this.update(id, {
+      currentUses: existing.currentUses + 1,
+    });
   }
 
   /**
@@ -428,23 +466,34 @@ export class BridgeKeyRepository {
    * Delete a bridge key
    */
   async delete(id: string): Promise<boolean> {
-    const result = await this.db.query(
-      `DELETE FROM ${TABLE_NAMES.BRIDGE_KEYS} WHERE id = $1`,
-      [id]
-    );
-    return result.rowCount > 0;
+    try {
+      await this.db.delete(TABLE_NAMES.BRIDGE_KEYS, id);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
    * Expire all bridge keys that have passed their expiration date
+   * Note: This is less efficient with REST API, use sparingly
    */
   async expireOldKeys(): Promise<number> {
-    const result = await this.db.query(
-      `UPDATE ${TABLE_NAMES.BRIDGE_KEYS}
-       SET status = 'expired', updated_at = NOW()
-       WHERE status = 'active' AND expires_at < NOW()`
-    );
-    return result.rowCount;
+    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
+      limit: 100,
+    });
+
+    const now = new Date();
+    let expiredCount = 0;
+
+    for (const record of records) {
+      if (record.status === "active" && record.expires_at && new Date(record.expires_at) < now) {
+        await this.update(record.id, { status: "expired" });
+        expiredCount++;
+      }
+    }
+
+    return expiredCount;
   }
 }
 

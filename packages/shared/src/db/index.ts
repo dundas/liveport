@@ -70,6 +70,47 @@ export class MechStorageClient {
   }
 
   /**
+   * API response wrapper type
+   */
+  private isWrappedResponse(data: unknown): data is { success: boolean; data: unknown } {
+    return (
+      typeof data === "object" &&
+      data !== null &&
+      "success" in data &&
+      "data" in data
+    );
+  }
+
+  private isRecordResponse(data: unknown): data is { success: boolean; record: unknown } {
+    return (
+      typeof data === "object" &&
+      data !== null &&
+      "success" in data &&
+      "record" in data
+    );
+  }
+
+  private isQueryResponse(data: unknown): data is { success: boolean; rows: unknown[]; rowCount: number } {
+    return (
+      typeof data === "object" &&
+      data !== null &&
+      "success" in data &&
+      "rows" in data &&
+      "rowCount" in data
+    );
+  }
+
+  private isRecordsResponse(data: unknown): data is { success: boolean; records: unknown[]; pagination: { total: number } } {
+    return (
+      typeof data === "object" &&
+      data !== null &&
+      "success" in data &&
+      "records" in data &&
+      "pagination" in data
+    );
+  }
+
+  /**
    * Make an API request with error handling
    */
   private async request<T>(
@@ -90,14 +131,47 @@ export class MechStorageClient {
     const response = await fetch(url, options);
 
     if (!response.ok) {
-      const errorData = (await response.json().catch(() => ({
-        code: "UNKNOWN_ERROR",
-        message: `Request failed with status ${response.status}`,
-      }))) as MechStorageError;
+      const errorText = await response.text();
+      console.error(`[MechStorageClient] Request failed: ${method} ${url}`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorBody: errorText,
+      });
+      let errorData: MechStorageError;
+      try {
+        errorData = JSON.parse(errorText) as MechStorageError;
+      } catch {
+        errorData = {
+          code: "UNKNOWN_ERROR",
+          message: `Request failed with status ${response.status}: ${errorText}`,
+        };
+      }
       throw new DatabaseError(errorData);
     }
 
-    return response.json() as Promise<T>;
+    const json = await response.json();
+
+    // Unwrap { success: true, data: ... } response format
+    if (this.isWrappedResponse(json)) {
+      return json.data as T;
+    }
+
+    // Unwrap { success: true, record: ... } response format (for single records)
+    if (this.isRecordResponse(json)) {
+      return json.record as T;
+    }
+
+    // Unwrap { success: true, rows: [...], rowCount: N } response format (for queries)
+    if (this.isQueryResponse(json)) {
+      return { rows: json.rows, rowCount: json.rowCount } as T;
+    }
+
+    // Unwrap { success: true, records: [...], pagination: { total: N } } response format (for getRecords)
+    if (this.isRecordsResponse(json)) {
+      return { records: json.records, total: json.pagination.total } as T;
+    }
+
+    return json as T;
   }
 
   /**
@@ -132,7 +206,7 @@ export class MechStorageClient {
       limit?: number;
       offset?: number;
       orderBy?: string;
-      orderDir?: "asc" | "desc";
+      orderDir?: "ASC" | "DESC";
     } = {}
   ): Promise<{ records: T[]; total: number }> {
     const params = new URLSearchParams();
@@ -253,11 +327,12 @@ export class MechStorageClient {
   /**
    * List all tables in the app's schema
    */
-  async listTables(): Promise<Array<{ name: string; schema: string; type: string }>> {
-    const result = await this.request<
-      Array<{ name: string; schema: string; type: string }>
-    >("GET", "/tables");
-    return result || [];
+  async listTables(): Promise<Array<{ name: string; schema?: string; type?: string }>> {
+    const result = await this.request<{
+      tables: Array<{ name: string; schema?: string; type?: string }>;
+      count: number;
+    }>("GET", "/tables");
+    return result?.tables || [];
   }
 
   /**

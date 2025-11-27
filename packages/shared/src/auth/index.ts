@@ -5,4 +5,4 @@
  */
 
 export { mechStorageAdapter } from "./mech-storage-adapter.js";
-export type { Adapter } from "./mech-storage-adapter.js";
+export type { MechStorageAdapterConfig } from "./mech-storage-adapter.js";
