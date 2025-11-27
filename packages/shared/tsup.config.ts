@@ -8,6 +8,7 @@ export default defineConfig({
     "keys/index": "src/keys/index.ts",
     "auth/index": "src/auth/index.ts",
     "crypto/index": "src/crypto/index.ts",
+    "logging/index": "src/logging/index.ts",
   },
   format: ["cjs", "esm"],
   dts: true,

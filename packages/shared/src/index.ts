@@ -16,6 +16,10 @@ export { hashKey, verifyKey, legacySha256Hash, isBcryptHash } from "./crypto";
 export { mechStorageAdapter } from "./auth";
 export type { MechStorageAdapterConfig } from "./auth";
 
+// Logging is exported separately via @liveport/shared/logging
+// to avoid bundling pino in Next.js builds
+// Use: import { createLogger } from "@liveport/shared/logging"
+
 // Re-export specific modules for direct imports
 export { getDatabase, initDatabase, MechStorageClient, DatabaseError } from "./db";
 export { BridgeKeyRepository, TunnelRepository, UserRepository, createRepositories } from "./db";
