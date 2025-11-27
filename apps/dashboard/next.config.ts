@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -55,4 +56,24 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Sentry configuration (only wraps when SENTRY_DSN is set)
+const sentryWebpackPluginOptions = {
+  // Suppress logs during build unless in CI
+  silent: !process.env.CI,
+
+  // Upload source maps for better error traces
+  widenClientFileUpload: true,
+
+  // Hide source maps from users
+  hideSourceMaps: true,
+
+  // Disable telemetry
+  telemetry: false,
+
+  // Don't fail build if Sentry is not configured
+  disableLogger: true,
+};
+
+export default process.env.SENTRY_DSN
+  ? withSentryConfig(nextConfig, sentryWebpackPluginOptions)
+  : nextConfig;
