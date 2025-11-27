@@ -1,0 +1,63 @@
+# npm Publish Workflow
+# Publishes @liveport/cli and @liveport/agent-sdk to npm on version tags
+
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to publish (cli, agent-sdk, or both)'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - cli
+          - agent-sdk
+          - both
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Publish CLI
+        if: github.event_name == 'push' || github.event.inputs.package == 'cli' || github.event.inputs.package == 'both'
+        run: pnpm --filter @liveport/cli publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish Agent SDK
+        if: github.event_name == 'push' || github.event.inputs.package == 'agent-sdk' || github.event.inputs.package == 'both'
+        run: pnpm --filter @liveport/agent-sdk publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
