@@ -9,7 +9,10 @@
     "lint": "turbo lint",
     "test": "turbo test",
     "clean": "turbo clean && rm -rf node_modules",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "migrate": "tsx scripts/migrate.ts up",
+    "migrate:status": "tsx scripts/migrate.ts status",
+    "migrate:rollback": "tsx scripts/migrate.ts rollback"
   },
   "keywords": [
     "tunnel",

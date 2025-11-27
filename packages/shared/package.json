@@ -17,6 +17,16 @@
       "import": "./dist/db/index.mjs",
       "require": "./dist/db/index.js"
     },
+    "./db/migrations": {
+      "types": "./dist/db/migrations/index.d.ts",
+      "import": "./dist/db/migrations/index.mjs",
+      "require": "./dist/db/migrations/index.js"
+    },
+    "./db/migrations/all": {
+      "types": "./dist/db/migrations/all.d.ts",
+      "import": "./dist/db/migrations/all.mjs",
+      "require": "./dist/db/migrations/all.js"
+    },
     "./redis": {
       "types": "./dist/redis/index.d.ts",
       "import": "./dist/redis/index.mjs",

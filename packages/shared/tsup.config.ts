@@ -4,6 +4,8 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     "db/index": "src/db/index.ts",
+    "db/migrations/index": "src/db/migrations/index.ts",
+    "db/migrations/all": "src/db/migrations/all.ts",
     "redis/index": "src/redis/index.ts",
     "keys/index": "src/keys/index.ts",
     "auth/index": "src/auth/index.ts",
