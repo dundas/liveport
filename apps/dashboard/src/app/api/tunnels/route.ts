@@ -8,6 +8,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { getBridgeKeyRepository } from "@/lib/db";
+import { getLogger } from "@liveport/shared/logging";
+
+const logger = getLogger("dashboard:api:tunnels");
 
 // Tunnel server URL for internal API calls
 const TUNNEL_SERVER_URL = process.env.TUNNEL_SERVER_URL || "http://localhost:8080";
@@ -82,7 +85,7 @@ export async function GET(request: NextRequest) {
       })),
     });
   } catch (error) {
-    console.error("[TunnelsAPI] Error fetching tunnels:", error);
+    logger.error({ err: error, userId: session.user.id }, "Failed to fetch tunnels");
     return NextResponse.json(
       { error: "Internal error" },
       { status: 500 }

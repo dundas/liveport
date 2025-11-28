@@ -1,0 +1,62 @@
+{
+  "colors": {
+    "background": "#050505",
+    "foreground": "#e0e0e0",
+    "primary": "#00ff41",
+    "primary-foreground": "#000000",
+    "secondary": "#1a1a1a",
+    "secondary-foreground": "#e0e0e0",
+    "muted": "#1a1a1a",
+    "muted-foreground": "#888888",
+    "accent": "#1a1a1a",
+    "accent-foreground": "#00ff41",
+    "destructive": "#ff0000",
+    "destructive-foreground": "#ffffff",
+    "border": "#333333",
+    "input": "#000000",
+    "ring": "#00ff41",
+    "card": "#000000",
+    "card-foreground": "#e0e0e0",
+    "popover": "#000000",
+    "popover-foreground": "#e0e0e0",
+    "grid-line": "#1a1a1a"
+  },
+  "typography": {
+    "font-family-mono": "JetBrains Mono, monospace",
+    "font-size-base": "16px",
+    "line-height-base": "1.5"
+  },
+  "spacing": {
+    "unit": "4px",
+    "sm": "8px",
+    "md": "16px",
+    "lg": "24px",
+    "xl": "32px"
+  },
+  "radii": {
+    "none": "0px"
+  },
+  "components": {
+    "button": {
+      "border-radius": "0px",
+      "text-transform": "uppercase",
+      "hover-effect": "translateY(-2px) translateX(-2px) shadow-[4px_4px_0_var(--color-primary)]"
+    },
+    "card": {
+      "border-radius": "0px",
+      "border-width": "1px",
+      "border-color": "var(--color-border)"
+    },
+    "input": {
+      "border-radius": "0px",
+      "background": "var(--color-input)",
+      "font-family": "var(--font-family-mono)",
+      "focus-ring": "outline-none ring-2 ring-ring ring-offset-0"
+    },
+    "badge": {
+      "border-radius": "0px",
+      "text-transform": "uppercase",
+      "font-family": "var(--font-family-mono)"
+    }
+  }
+}

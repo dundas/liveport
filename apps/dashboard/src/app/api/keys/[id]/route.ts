@@ -8,6 +8,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { getBridgeKeyRepository } from "@/lib/db";
+import { getLogger } from "@liveport/shared/logging";
+
+const logger = getLogger("dashboard:api:keys");
 
 /**
  * DELETE /api/keys/[id] - Revoke a bridge key
@@ -57,7 +60,7 @@ export async function DELETE(
       message: "Key revoked successfully",
     });
   } catch (error) {
-    console.error("[API] DELETE /api/keys/[id] error:", error);
+    logger.error({ err: error, keyId: id, userId: session.user.id }, "Failed to revoke bridge key");
     return NextResponse.json(
       { error: "Failed to revoke key" },
       { status: 500 }

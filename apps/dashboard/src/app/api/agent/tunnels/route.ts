@@ -6,6 +6,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { validateBridgeKey } from "@/lib/bridge-key-auth";
+import { getLogger } from "@liveport/shared/logging";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const logger = getLogger("dashboard:api:agent:tunnels");
 
 // Tunnel server URL for internal API calls
 const TUNNEL_SERVER_URL = process.env.TUNNEL_SERVER_URL || "http://localhost:8080";
@@ -25,6 +29,27 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Rate limiting - 60 requests per minute per key
+  const rateLimit = await checkRateLimit(auth.keyId!, {
+    maxRequests: 60,
+    windowMs: 60_000,
+    keyPrefix: "agent:tunnels",
+  });
+
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded", code: "RATE_LIMIT_EXCEEDED" },
+      { 
+        status: 429,
+        headers: {
+          "X-RateLimit-Limit": rateLimit.limit.toString(),
+          "X-RateLimit-Remaining": rateLimit.remaining.toString(),
+          "X-RateLimit-Reset": rateLimit.resetAt.toString(),
+        }
+      }
+    );
+  }
+
   try {
     // Query tunnel server for active tunnels
     const tunnelResponse = await fetch(
@@ -37,7 +62,7 @@ export async function GET(request: NextRequest) {
     );
 
     if (!tunnelResponse.ok) {
-      console.error("[AgentAPI] Failed to fetch tunnels from tunnel server");
+      logger.error({ keyId: auth.keyId, status: tunnelResponse.status }, "Failed to fetch tunnels from tunnel server");
       return NextResponse.json(
         { error: "Failed to fetch tunnels", code: "TUNNEL_SERVER_ERROR" },
         { status: 502 }
@@ -50,7 +75,7 @@ export async function GET(request: NextRequest) {
       tunnels: data.tunnels || [],
     });
   } catch (error) {
-    console.error("[AgentAPI] Error fetching tunnels:", error);
+    logger.error({ err: error, keyId: auth.keyId }, "Error fetching tunnels");
     return NextResponse.json(
       { error: "Internal error", code: "INTERNAL_ERROR" },
       { status: 500 }

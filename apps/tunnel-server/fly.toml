@@ -1,5 +1,5 @@
 # Fly.io configuration for LivePort Tunnel Server
-# Deploy: fly deploy --config apps/tunnel-server/fly.toml
+# Deploy from repo root: fly deploy --config apps/tunnel-server/fly.toml
 
 app = "liveport-tunnel"
 primary_region = "iad"
@@ -9,11 +9,12 @@ primary_region = "iad"
 
 [env]
   NODE_ENV = "production"
-  PORT = "3001"
-  BASE_DOMAIN = "liveport.dev"
+  PORT = "8080"
+  # BASE_DOMAIN should be set via secrets for flexibility
+  # BASE_DOMAIN = "liveport.online"
 
 [http_service]
-  internal_port = 3001
+  internal_port = 8080
   force_https = true
   auto_stop_machines = false
   auto_start_machines = true
@@ -22,32 +23,17 @@ primary_region = "iad"
 
   [http_service.concurrency]
     type = "connections"
-    hard_limit = 25
-    soft_limit = 20
+    hard_limit = 1000
+    soft_limit = 1000
+
+  [[http_service.checks]]
+    interval = "10s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "get"
+    path = "/health"
 
 [[vm]]
   memory = "512mb"
   cpu_kind = "shared"
   cpus = 1
-
-# Health check
-[[services.http_checks]]
-  interval = "10s"
-  timeout = "2s"
-  grace_period = "5s"
-  method = "get"
-  path = "/health"
-
-# WebSocket support
-[[services.ports]]
-  handlers = ["http", "tls"]
-  port = 443
-  tls_options = { "alpn" = ["h2", "http/1.1"] }
-
-[[services.ports]]
-  handlers = ["http"]
-  port = 80
-
-# Persistent connections for WebSocket
-[processes]
-  app = "node dist/index.mjs"

@@ -1,0 +1,557 @@
+openapi: 3.1.0
+info:
+  title: LivePort API
+  description: |
+    API for managing LivePort tunnels and bridge keys.
+
+    ## Authentication
+
+    LivePort uses two authentication methods:
+
+    ### Session Authentication (Dashboard)
+    Used for the web dashboard. Sessions are managed via cookies after login.
+
+    ### Bridge Key Authentication (Agent API)
+    Used by AI agents and CLI tools. Pass your bridge key in the `Authorization` header:
+    ```
+    Authorization: Bearer bk_xxxxxxxxxxxxxxxxxxxx
+    ```
+  version: 0.1.0
+  contact:
+    name: LivePort Support
+    url: https://liveport.dev
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://app.liveport.dev
+    description: Production server
+  - url: http://localhost:3001
+    description: Local development
+
+tags:
+  - name: Bridge Keys
+    description: Manage bridge keys for tunnel authentication
+  - name: Tunnels
+    description: View and manage active tunnels
+  - name: Agent API
+    description: API endpoints for AI agents and automation
+  - name: Health
+    description: Service health and status
+
+paths:
+  /api/keys:
+    get:
+      summary: List bridge keys
+      description: Returns all bridge keys for the authenticated user
+      operationId: listKeys
+      tags: [Bridge Keys]
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of bridge keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BridgeKey'
+              example:
+                keys:
+                  - id: "key_abc123"
+                    name: "Production Key"
+                    prefix: "bk_abc1"
+                    status: "active"
+                    expiresAt: "2025-12-31T23:59:59Z"
+                    maxUses: 1000
+                    currentUses: 42
+                    allowedPort: null
+                    lastUsedAt: "2025-11-27T10:30:00Z"
+                    createdAt: "2025-11-01T00:00:00Z"
+                    updatedAt: "2025-11-27T10:30:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create bridge key
+      description: |
+        Creates a new bridge key. The full key is returned only once in the response.
+        Store it securely as it cannot be retrieved again.
+      operationId: createKey
+      tags: [Bridge Keys]
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKeyRequest'
+            example:
+              name: "CI/CD Key"
+              expiresInDays: 30
+              maxUses: 100
+      responses:
+        '200':
+          description: Bridge key created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateKeyResponse'
+              example:
+                key: "bk_abc123def456ghi789jkl012mno345"
+                id: "key_xyz789"
+                name: "CI/CD Key"
+                prefix: "bk_abc1"
+                expiresAt: "2025-12-27T13:45:00Z"
+                maxUses: 100
+                allowedPort: null
+                createdAt: "2025-11-27T13:45:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/keys/{id}:
+    delete:
+      summary: Revoke bridge key
+      description: Revokes a bridge key, preventing further use
+      operationId: revokeKey
+      tags: [Bridge Keys]
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Bridge key ID
+          schema:
+            type: string
+          example: "key_abc123"
+      responses:
+        '200':
+          description: Key revoked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [revoked]
+                  message:
+                    type: string
+              example:
+                id: "key_abc123"
+                status: "revoked"
+                message: "Key revoked successfully"
+        '400':
+          description: Key ID required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Key belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/tunnels:
+    get:
+      summary: List user tunnels
+      description: Returns all tunnels for the authenticated user
+      operationId: listTunnels
+      tags: [Tunnels]
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of tunnels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tunnels:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tunnel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/agent/tunnels:
+    get:
+      summary: List tunnels for bridge key
+      description: Returns active tunnels associated with the authenticated bridge key
+      operationId: listAgentTunnels
+      tags: [Agent API]
+      security:
+        - bridgeKeyAuth: []
+      responses:
+        '200':
+          description: List of active tunnels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tunnels:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentTunnel'
+              example:
+                tunnels:
+                  - tunnelId: "tun_abc123"
+                    subdomain: "my-app-xyz"
+                    url: "https://my-app-xyz.tunnel.liveport.dev"
+                    localPort: 3000
+                    state: "active"
+                    createdAt: "2025-11-27T10:00:00Z"
+        '401':
+          description: Invalid or missing bridge key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentError'
+              example:
+                error: "Invalid bridge key"
+                code: "INVALID_KEY"
+        '502':
+          description: Tunnel server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentError'
+
+  /api/agent/tunnels/wait:
+    get:
+      summary: Wait for tunnel
+      description: |
+        Long-polls until a tunnel becomes available or timeout is reached.
+        Use this to wait for a developer to start their local tunnel.
+      operationId: waitForTunnel
+      tags: [Agent API]
+      security:
+        - bridgeKeyAuth: []
+      parameters:
+        - name: timeout
+          in: query
+          description: Maximum time to wait in milliseconds (1000-30000)
+          schema:
+            type: integer
+            minimum: 1000
+            maximum: 30000
+            default: 5000
+          example: 30000
+      responses:
+        '200':
+          description: Tunnel is available
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tunnel:
+                    $ref: '#/components/schemas/AgentTunnel'
+              example:
+                tunnel:
+                  tunnelId: "tun_abc123"
+                  subdomain: "my-app-xyz"
+                  url: "https://my-app-xyz.tunnel.liveport.dev"
+                  localPort: 3000
+                  state: "active"
+                  createdAt: "2025-11-27T10:00:00Z"
+        '401':
+          description: Invalid or missing bridge key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentError'
+        '408':
+          description: Timeout - no tunnel available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentError'
+              example:
+                error: "No tunnel available"
+                code: "TIMEOUT"
+        '502':
+          description: Tunnel server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentError'
+
+  /api/health:
+    get:
+      summary: Health check
+      description: Returns service health status and dependency checks
+      operationId: healthCheck
+      tags: [Health]
+      parameters:
+        - name: detailed
+          in: query
+          description: Include detailed dependency status
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                timestamp: "2025-11-27T13:45:00Z"
+                version: "0.1.0"
+                checks:
+                  database: "ok"
+                  redis: "ok"
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "unhealthy"
+                timestamp: "2025-11-27T13:45:00Z"
+                version: "0.1.0"
+                checks:
+                  database: "ok"
+                  redis: "error"
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: better-auth.session_token
+      description: Session cookie from dashboard login
+
+    bridgeKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: BridgeKey
+      description: |
+        Bridge key authentication for agent API.
+        Format: `Bearer bk_xxxxxxxxxxxxxxxxxxxx`
+
+  schemas:
+    BridgeKey:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique key identifier
+        name:
+          type: string
+          description: User-defined key name
+        prefix:
+          type: string
+          description: First 8 characters of the key (for identification)
+        status:
+          type: string
+          enum: [active, revoked, expired]
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        maxUses:
+          type: integer
+          nullable: true
+          description: Maximum allowed uses (null = unlimited)
+        currentUses:
+          type: integer
+          description: Current usage count
+        allowedPort:
+          type: integer
+          nullable: true
+          description: Restrict to specific port (null = any port)
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateKeyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          default: "API Key"
+          description: Name for the key
+        expiresInDays:
+          type: integer
+          minimum: 1
+          description: Days until key expires (omit for non-expiring)
+        maxUses:
+          type: integer
+          minimum: 1
+          description: Maximum uses (omit for unlimited)
+        allowedPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: Restrict to specific port
+
+    CreateKeyResponse:
+      type: object
+      required: [key, id, name, prefix, createdAt]
+      properties:
+        key:
+          type: string
+          description: |
+            The full bridge key. **Store securely - shown only once!**
+        id:
+          type: string
+        name:
+          type: string
+        prefix:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        maxUses:
+          type: integer
+          nullable: true
+        allowedPort:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    Tunnel:
+      type: object
+      properties:
+        id:
+          type: string
+        subdomain:
+          type: string
+        publicUrl:
+          type: string
+          format: uri
+        localPort:
+          type: integer
+        region:
+          type: string
+        connectedAt:
+          type: string
+          format: date-time
+        requestCount:
+          type: integer
+        bytesTransferred:
+          type: integer
+
+    AgentTunnel:
+      type: object
+      properties:
+        tunnelId:
+          type: string
+        subdomain:
+          type: string
+        url:
+          type: string
+          format: uri
+        localPort:
+          type: integer
+        state:
+          type: string
+          enum: [active, disconnected]
+        createdAt:
+          type: string
+          format: date-time
+
+    HealthResponse:
+      type: object
+      required: [status, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, error, unknown]
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    AgentError:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - INVALID_KEY
+            - EXPIRED_KEY
+            - REVOKED_KEY
+            - USAGE_LIMIT_EXCEEDED
+            - TIMEOUT
+            - TUNNEL_SERVER_ERROR
+            - INTERNAL_ERROR
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Unauthorized"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Internal server error"

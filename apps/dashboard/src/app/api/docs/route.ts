@@ -7,14 +7,18 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { getLogger } from "@liveport/shared/logging";
+
+const logger = getLogger("dashboard:api:docs");
 
 export async function GET() {
   try {
-    // Read the OpenAPI spec from the docs folder
-    const specPath = path.join(process.cwd(), "../../docs/api/openapi.yaml");
+    // Read the OpenAPI spec from the public folder
+    const specPath = path.join(process.cwd(), "public/openapi.yaml");
 
     // Check if file exists
     if (!fs.existsSync(specPath)) {
+      logger.warn("OpenAPI specification not found at public/openapi.yaml");
       return NextResponse.json(
         { error: "OpenAPI specification not found" },
         { status: 404 }
@@ -30,7 +34,7 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error("[API] GET /api/docs error:", error);
+    logger.error({ err: error }, "Failed to load API documentation");
     return NextResponse.json(
       { error: "Failed to load API documentation" },
       { status: 500 }

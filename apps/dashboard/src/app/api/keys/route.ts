@@ -10,6 +10,9 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { getBridgeKeyRepository } from "@/lib/db";
 import { generateBridgeKey, getKeyPrefix, hashKey, type BridgeKey } from "@liveport/shared";
+import { getLogger } from "@liveport/shared/logging";
+
+const logger = getLogger("dashboard:api:keys");
 
 /**
  * GET /api/keys - List user's bridge keys
@@ -44,7 +47,7 @@ export async function GET() {
 
     return NextResponse.json({ keys: responseKeys });
   } catch (error) {
-    console.error("[API] GET /api/keys error:", error);
+    logger.error({ err: error }, "Failed to fetch bridge keys");
     return NextResponse.json(
       { error: "Failed to fetch keys" },
       { status: 500 }
@@ -113,7 +116,7 @@ export async function POST(request: NextRequest) {
       createdAt: created.createdAt.toISOString(),
     });
   } catch (error) {
-    console.error("[API] POST /api/keys error:", error);
+    logger.error({ err: error, userId: session.user.id }, "Failed to create bridge key");
     return NextResponse.json(
       { error: "Failed to create key" },
       { status: 500 }

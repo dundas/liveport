@@ -6,6 +6,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { validateBridgeKey } from "@/lib/bridge-key-auth";
+import { getLogger } from "@liveport/shared/logging";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const logger = getLogger("dashboard:api:agent:tunnels:wait");
 
 // Tunnel server URL for internal API calls
 const TUNNEL_SERVER_URL = process.env.TUNNEL_SERVER_URL || "http://localhost:8080";
@@ -33,6 +37,27 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Rate limiting - 30 requests per minute per key (lower for long-polling)
+  const rateLimit = await checkRateLimit(auth.keyId!, {
+    maxRequests: 30,
+    windowMs: 60_000,
+    keyPrefix: "agent:tunnels:wait",
+  });
+
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded", code: "RATE_LIMIT_EXCEEDED" },
+      { 
+        status: 429,
+        headers: {
+          "X-RateLimit-Limit": rateLimit.limit.toString(),
+          "X-RateLimit-Remaining": rateLimit.remaining.toString(),
+          "X-RateLimit-Reset": rateLimit.resetAt.toString(),
+        }
+      }
+    );
+  }
+
   // Parse timeout from query params
   const url = new URL(request.url);
   const timeoutParam = url.searchParams.get("timeout");
@@ -56,7 +81,7 @@ export async function GET(request: NextRequest) {
       );
 
       if (!tunnelResponse.ok) {
-        console.error("[AgentAPI] Failed to fetch tunnels from tunnel server");
+        logger.error({ keyId: auth.keyId, status: tunnelResponse.status }, "Failed to fetch tunnels from tunnel server");
         return NextResponse.json(
           { error: "Failed to fetch tunnels", code: "TUNNEL_SERVER_ERROR" },
           { status: 502 }
@@ -91,7 +116,7 @@ export async function GET(request: NextRequest) {
       { status: 408 }
     );
   } catch (error) {
-    console.error("[AgentAPI] Error waiting for tunnel:", error);
+    logger.error({ err: error, keyId: auth.keyId }, "Error waiting for tunnel");
     return NextResponse.json(
       { error: "Internal error", code: "INTERNAL_ERROR" },
       { status: 500 }

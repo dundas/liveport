@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LivePort - Industrial Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050505;
+            --text: #e0e0e0;
+            --accent: #00ff41; /* Matrix Green */
+            --accent-dim: #003b0f;
+            --grid: #1a1a1a;
+            --border: #333;
+            --warning: #ffb000;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            line-height: 1.5;
+            overflow-x: hidden;
+            background-image: 
+                linear-gradient(var(--grid) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        /* Scanline effect */
+        body::after {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.15),
+                rgba(0, 0, 0, 0.15) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            border-left: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            min-height: 100vh;
+            background: rgba(5, 5, 5, 0.8);
+        }
+
+        /* Header */
+        header {
+            border-bottom: 1px solid var(--border);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-weight: 800;
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            letter-spacing: -1px;
+        }
+
+        .logo span { color: var(--accent); }
+
+        nav a {
+            color: var(--text);
+            text-decoration: none;
+            margin-left: 30px;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            opacity: 0.7;
+            transition: opacity 0.2s, color 0.2s;
+        }
+
+        nav a:hover {
+            opacity: 1;
+            color: var(--accent);
+            text-decoration: underline;
+        }
+
+        /* Hero */
+        .hero {
+            padding: 100px 20px;
+            border-bottom: 1px solid var(--border);
+            position: relative;
+        }
+
+        .status-bar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 0.7rem;
+            color: var(--accent);
+            border: 1px solid var(--accent);
+            padding: 2px 6px;
+            text-transform: uppercase;
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 5vw, 4.5rem);
+            line-height: 1.1;
+            margin-bottom: 30px;
+            max-width: 800px;
+        }
+
+        .hero h1 .highlight {
+            color: var(--bg);
+            background: var(--accent);
+            padding: 0 10px;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            max-width: 600px;
+            margin-bottom: 40px;
+            color: #888;
+        }
+
+        .cli-box {
+            background: #000;
+            border: 1px solid var(--border);
+            padding: 20px;
+            max-width: 600px;
+            font-size: 0.9rem;
+            box-shadow: 10px 10px 0 var(--grid);
+            margin-bottom: 50px;
+        }
+
+        .cli-line {
+            display: flex;
+            margin-bottom: 10px;
+        }
+
+        .cli-prompt {
+            color: var(--accent);
+            margin-right: 10px;
+        }
+
+        .typing-text::after {
+            content: "█";
+            animation: blink 1s step-end infinite;
+            color: var(--accent);
+            margin-left: 5px;
+        }
+
+        @keyframes blink { 50% { opacity: 0; } }
+
+        .cta-group {
+            display: flex;
+            gap: 20px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 15px 30px;
+            font-family: inherit;
+            font-weight: 700;
+            text-transform: uppercase;
+            text-decoration: none;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: var(--bg);
+            border: 1px solid var(--accent);
+        }
+
+        .btn-primary:hover {
+            background: transparent;
+            color: var(--accent);
+            box-shadow: 4px 4px 0 var(--accent);
+            transform: translate(-2px, -2px);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: var(--text);
+            color: var(--bg);
+        }
+
+        /* Features Grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            border-bottom: 1px solid var(--border);
+        }
+
+        .feature-card {
+            padding: 40px;
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .feature-icon {
+            font-size: 1.5rem;
+            color: var(--warning);
+            margin-bottom: 20px;
+        }
+
+        .feature-card h3 {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+        }
+
+        .feature-card p {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        /* Code Section */
+        .code-section {
+            padding: 80px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .code-block {
+            background: #0d0d0d;
+            border: 1px solid var(--border);
+            padding: 30px;
+            width: 100%;
+            max-width: 800px;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .code-block::before {
+            content: "SDK_USAGE.TS";
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: var(--border);
+            color: var(--text);
+            font-size: 0.7rem;
+            padding: 2px 8px;
+        }
+
+        pre { color: #a9b7c6; }
+        .kw { color: #cc7832; } /* Keyword */
+        .str { color: #6a8759; } /* String */
+        .fn { color: #ffc66d; } /* Function */
+
+        /* Footer */
+        footer {
+            padding: 40px 20px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #555;
+            text-transform: uppercase;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">Live<span>Port</span>_</div>
+            <nav>
+                <a href="#">Docs</a>
+                <a href="#">Pricing</a>
+                <a href="#">GitHub</a>
+                <a href="#">Login</a>
+            </nav>
+        </header>
+
+        <section class="hero">
+            <div class="status-bar">System: Online</div>
+            <h1>Expose <span class="highlight">Localhost</span> to the World. Securely.</h1>
+            <p>Zero-config tunnels for developers and AI agents. Production-grade infrastructure for your local environment.</p>
+            
+            <div class="cli-box">
+                <div class="cli-line">
+                    <span class="cli-prompt">$</span>
+                    <span>npm install -g @liveport/cli</span>
+                </div>
+                <div class="cli-line">
+                    <span class="cli-prompt">$</span>
+                    <span class="typing-text">liveport connect 3000</span>
+                </div>
+            </div>
+
+            <div class="cta-group">
+                <a href="#" class="btn btn-primary">Get Started</a>
+                <a href="#" class="btn btn-secondary">Read Documentation</a>
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="feature-card">
+                <div class="feature-icon">01_</div>
+                <h3>Instant Tunnels</h3>
+                <p>Bypass firewalls and NATs with a single command. No router configuration required. Generated SSL certificates included.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">02_</div>
+                <h3>Bridge Keys</h3>
+                <p>Secure your tunnels with cryptographic keys. Control access, expiration, and rate limits per key.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">03_</div>
+                <h3>Agent SDK</h3>
+                <p>First-class support for AI agents. Programmatically control tunnels and wait for connections in your test suites.</p>
+            </div>
+        </section>
+
+        <section class="code-section">
+            <h2 style="margin-bottom: 40px; text-transform: uppercase;">Programmatic Control</h2>
+            <div class="code-block">
+                <pre><code><span class="kw">import</span> { LivePortAgent } <span class="kw">from</span> <span class="str">"@liveport/agent-sdk"</span>;
+
+<span class="kw">const</span> agent = <span class="kw">new</span> <span class="fn">LivePortAgent</span>({
+  key: <span class="str">"lpk_production_key"</span>
+});
+
+<span class="com">// Wait for tunnel to be established</span>
+<span class="kw">const</span> tunnel = <span class="kw">await</span> agent.<span class="fn">waitForTunnel</span>();
+
+console.<span class="fn">log</span>(<span class="str">`Target acquired: ${tunnel.url}`</span>);</code></pre>
+            </div>
+        </section>
+
+        <footer>
+            <p>LivePort © 2025 // All Systems Nominal</p>
+        </footer>
+    </div>
+
+    <script>
+        // Simple typing effect
+        const text = "liveport connect 3000";
+        const typingElement = document.querySelector('.typing-text');
+        typingElement.textContent = ""; // Clear initially
+        
+        let i = 0;
+        function typeWriter() {
+            if (i < text.length) {
+                typingElement.textContent += text.charAt(i);
+                i++;
+                setTimeout(typeWriter, 100);
+            }
+        }
+        
+        setTimeout(typeWriter, 1000); // Start after 1s
+    </script>
+</body>
+</html>
