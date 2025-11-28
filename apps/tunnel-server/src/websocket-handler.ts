@@ -273,11 +273,19 @@ export async function handleConnection(
       const connection = connectionManager.findBySubdomain(subdomain);
       
       // Finalize metrics in database before unregistering
+      // Pass full tunnel info for UPSERT in case record doesn't exist yet
       if (connection) {
         await finalizeTunnelMetrics(
           tunnelId,
           connection.requestCount,
-          connection.bytesTransferred
+          connection.bytesTransferred,
+          {
+            userId: connection.userId,
+            keyId: connection.keyId,
+            subdomain: connection.subdomain,
+            localPort: connection.localPort,
+            createdAt: connection.createdAt,
+          }
         );
       }
 

@@ -3,13 +3,13 @@
  *
  * Provides IP-based rate limiting for authentication endpoints
  * to prevent brute force attacks.
+ *
+ * Uses Redis for distributed rate limiting (required for multi-instance deployments).
+ * Falls back to in-memory store if Redis is not available (development only).
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
-
-// In-memory store for rate limiting (use Redis in production for multi-instance)
-const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 
 export interface RateLimitConfig {
   /** Maximum requests allowed in the window */
@@ -25,6 +25,47 @@ export interface RateLimitResult {
   remaining: number;
   limit: number;
   resetAt: number;
+}
+
+// Redis client (lazy initialized)
+let redisClient: import("ioredis").Redis | null = null;
+let redisInitialized = false;
+
+// In-memory fallback store (development only)
+const memoryStore = new Map<string, { count: number; resetAt: number }>();
+
+/**
+ * Initialize Redis client for rate limiting
+ */
+async function getRedisClient(): Promise<import("ioredis").Redis | null> {
+  if (redisInitialized) {
+    return redisClient;
+  }
+
+  redisInitialized = true;
+
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    console.warn("[RateLimit] REDIS_URL not configured, using in-memory fallback (not suitable for production)");
+    return null;
+  }
+
+  try {
+    // Dynamic import to avoid bundling issues
+    const Redis = (await import("ioredis")).default;
+    redisClient = new Redis(redisUrl, {
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times) => Math.min(times * 100, 3000),
+    });
+
+    // Test connection
+    await redisClient.ping();
+    console.log("[RateLimit] Redis connected successfully");
+    return redisClient;
+  } catch (err) {
+    console.error("[RateLimit] Failed to connect to Redis:", err);
+    return null;
+  }
 }
 
 /**
@@ -48,31 +89,96 @@ export function getClientIP(request: NextRequest): string {
     return flyClientIP;
   }
 
+  // Vercel specific header
+  const vercelIP = request.headers.get("x-vercel-forwarded-for");
+  if (vercelIP) {
+    return vercelIP.split(",")[0].trim();
+  }
+
   // Fallback to a default (shouldn't happen in production)
   return "unknown";
 }
 
 /**
- * Check rate limit for a given identifier
+ * Check rate limit using Redis (with in-memory fallback)
  */
-export function checkRateLimit(
+export async function checkRateLimitAsync(
   identifier: string,
   config: RateLimitConfig
-): RateLimitResult {
+): Promise<RateLimitResult> {
   const { maxRequests, windowMs, keyPrefix = "ratelimit" } = config;
   const key = `${keyPrefix}:${identifier}`;
   const now = Date.now();
 
+  const redis = await getRedisClient();
+
+  if (redis) {
+    // Use Redis for distributed rate limiting
+    try {
+      const multi = redis.multi();
+      multi.incr(key);
+      multi.pttl(key);
+      const results = await multi.exec();
+
+      if (!results) {
+        throw new Error("Redis multi failed");
+      }
+
+      const count = results[0][1] as number;
+      let ttl = results[1][1] as number;
+
+      // Set expiry on first request
+      if (ttl === -1) {
+        await redis.pexpire(key, windowMs);
+        ttl = windowMs;
+      }
+
+      const resetAt = now + ttl;
+
+      if (count > maxRequests) {
+        return {
+          success: false,
+          remaining: 0,
+          limit: maxRequests,
+          resetAt,
+        };
+      }
+
+      return {
+        success: true,
+        remaining: maxRequests - count,
+        limit: maxRequests,
+        resetAt,
+      };
+    } catch (err) {
+      console.error("[RateLimit] Redis error, falling back to memory:", err);
+      // Fall through to memory store
+    }
+  }
+
+  // In-memory fallback
+  return checkRateLimitMemory(key, maxRequests, windowMs, now);
+}
+
+/**
+ * In-memory rate limit check (fallback)
+ */
+function checkRateLimitMemory(
+  key: string,
+  maxRequests: number,
+  windowMs: number,
+  now: number
+): RateLimitResult {
   // Clean up expired entries periodically
   if (Math.random() < 0.01) {
     cleanupExpiredEntries();
   }
 
-  const entry = rateLimitStore.get(key);
+  const entry = memoryStore.get(key);
 
   // No existing entry or window has reset
   if (!entry || now >= entry.resetAt) {
-    rateLimitStore.set(key, {
+    memoryStore.set(key, {
       count: 1,
       resetAt: now + windowMs,
     });
@@ -106,13 +212,27 @@ export function checkRateLimit(
 }
 
 /**
- * Clean up expired entries from the store
+ * Synchronous rate limit check (uses memory store only)
+ * @deprecated Use checkRateLimitAsync for production
+ */
+export function checkRateLimit(
+  identifier: string,
+  config: RateLimitConfig
+): RateLimitResult {
+  const { maxRequests, windowMs, keyPrefix = "ratelimit" } = config;
+  const key = `${keyPrefix}:${identifier}`;
+  const now = Date.now();
+  return checkRateLimitMemory(key, maxRequests, windowMs, now);
+}
+
+/**
+ * Clean up expired entries from the memory store
  */
 function cleanupExpiredEntries(): void {
   const now = Date.now();
-  for (const [key, value] of rateLimitStore.entries()) {
+  for (const [key, value] of memoryStore.entries()) {
     if (now >= value.resetAt) {
-      rateLimitStore.delete(key);
+      memoryStore.delete(key);
     }
   }
 }

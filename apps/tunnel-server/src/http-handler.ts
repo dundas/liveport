@@ -8,10 +8,15 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { getConnectionManager } from "./connection-manager";
+import { getMeteringHealth } from "./metering";
+import { createLogger } from "@liveport/shared/logging";
 import type { HttpRequestMessage, HttpResponsePayload } from "./types";
+
+const logger = createLogger({ service: "tunnel-server:http" });
 
 const DEFAULT_BASE_DOMAIN = process.env.BASE_DOMAIN || "liveport.dev";
 const DEFAULT_REQUEST_TIMEOUT = 30000; // 30 seconds
+const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB max body size
 
 export interface HttpHandlerConfig {
   baseDomain: string;
@@ -67,11 +72,13 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
 
   // Health check endpoint
   app.get("/health", (c) => {
+    const metering = getMeteringHealth();
     return c.json({
-      status: "healthy",
+      status: metering.status === "healthy" ? "healthy" : "degraded",
       connections: connectionManager.getCount(),
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
+      metering,
     });
   });
 
@@ -86,6 +93,12 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
       tunnels: connectionManager.getSummary(),
       count: connectionManager.getCount(),
     });
+  });
+
+  // Metering health endpoint (for monitoring)
+  app.get("/_internal/metering/health", (c) => {
+    const health = getMeteringHealth();
+    return c.json(health);
   });
 
   // API endpoint: Get tunnels by key ID (for Agent SDK)
@@ -175,18 +188,31 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
     // Rewrite host to localhost
     headers["host"] = `localhost:${connection.localPort}`;
 
-    // Get body if present
+    // Get body if present (with size limit)
     let body: string | undefined;
     let requestBodySize = 0;
     if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
       try {
         const bodyBytes = await c.req.arrayBuffer();
+        if (bodyBytes.byteLength > MAX_BODY_SIZE) {
+          logger.warn(
+            { requestId, size: bodyBytes.byteLength, maxSize: MAX_BODY_SIZE },
+            "Request body too large"
+          );
+          return c.json(
+            {
+              error: "Payload Too Large",
+              message: `Request body exceeds ${MAX_BODY_SIZE / 1024 / 1024}MB limit`,
+            },
+            413
+          );
+        }
         if (bodyBytes.byteLength > 0) {
           requestBodySize = bodyBytes.byteLength;
           body = Buffer.from(bodyBytes).toString("base64");
         }
-      } catch {
-        // No body
+      } catch (err) {
+        logger.warn({ err, requestId }, "Failed to parse request body");
       }
     }
 

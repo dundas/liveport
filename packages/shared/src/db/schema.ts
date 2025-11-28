@@ -145,6 +145,12 @@ CREATE TABLE IF NOT EXISTS tunnels (
   request_count INTEGER DEFAULT 0,
   bytes_transferred BIGINT DEFAULT 0
 );
+
+-- Indexes for billing queries
+CREATE INDEX IF NOT EXISTS idx_tunnels_user_id ON tunnels(user_id);
+CREATE INDEX IF NOT EXISTS idx_tunnels_connected_at ON tunnels(connected_at);
+CREATE INDEX IF NOT EXISTS idx_tunnels_bridge_key_id ON tunnels(bridge_key_id);
+CREATE INDEX IF NOT EXISTS idx_tunnels_user_connected ON tunnels(user_id, connected_at);
 `.trim();
 
 /**
