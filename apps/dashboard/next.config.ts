@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["@liveport/shared", "pino", "pino-pretty", "thread-stream", "ioredis"],
 
+  // Empty turbopack config to acknowledge we're using Turbopack
+  turbopack: {},
+
   // Security headers
   async headers() {
     return [
