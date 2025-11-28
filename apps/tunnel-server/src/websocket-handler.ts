@@ -17,6 +17,7 @@ import type {
 import { CloseCodes, ErrorCodes } from "./types";
 import { getConnectionManager } from "./connection-manager";
 import { getKeyValidator } from "./key-validator";
+import { finalizeTunnelMetrics } from "./metering";
 import {
   createRedisClient,
   createRateLimiter,
@@ -259,7 +260,7 @@ export async function handleConnection(
   });
 
   // Handle close
-  socket.on("close", (code, reason) => {
+  socket.on("close", async (code, reason) => {
     console.log(
       `[WebSocket] Connection closed: ${subdomain} (code=${code}, reason=${reason.toString()})`
     );
@@ -268,7 +269,18 @@ export async function handleConnection(
       clearInterval(heartbeatTimer);
     }
 
-    if (subdomain) {
+    if (subdomain && tunnelId) {
+      const connection = connectionManager.findBySubdomain(subdomain);
+      
+      // Finalize metrics in database before unregistering
+      if (connection) {
+        await finalizeTunnelMetrics(
+          tunnelId,
+          connection.requestCount,
+          connection.bytesTransferred
+        );
+      }
+
       connectionManager.unregister(subdomain);
     }
 

@@ -124,6 +124,7 @@ export interface TunnelConnection {
   createdAt: Date;
   lastHeartbeat: Date;
   requestCount: number;
+  bytesTransferred: number; // Track total bytes for metering
   expiresAt: Date;
 }
 

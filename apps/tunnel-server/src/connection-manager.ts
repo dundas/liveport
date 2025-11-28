@@ -59,6 +59,7 @@ export class ConnectionManager {
       createdAt: new Date(),
       lastHeartbeat: new Date(),
       requestCount: 0,
+      bytesTransferred: 0,
       expiresAt,
     };
 
@@ -205,6 +206,16 @@ export class ConnectionManager {
   }
 
   /**
+   * Add bytes transferred for metering
+   */
+  addBytesTransferred(subdomain: string, bytes: number): void {
+    const connection = this.tunnelsBySubdomain.get(subdomain);
+    if (connection) {
+      connection.bytesTransferred += bytes;
+    }
+  }
+
+  /**
    * Register a pending HTTP request
    */
   registerPendingRequest(
@@ -265,6 +276,7 @@ export class ConnectionManager {
     createdAt: string;
     lastHeartbeat: string;
     requestCount: number;
+    bytesTransferred: number;
     expiresAt: string;
   }> {
     return Array.from(this.tunnelsBySubdomain.values()).map((conn) => ({
@@ -277,6 +289,7 @@ export class ConnectionManager {
       createdAt: conn.createdAt.toISOString(),
       lastHeartbeat: conn.lastHeartbeat.toISOString(),
       requestCount: conn.requestCount,
+      bytesTransferred: conn.bytesTransferred,
       expiresAt: conn.expiresAt.toISOString(),
     }));
   }

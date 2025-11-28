@@ -38,6 +38,7 @@ export const TABLE_NAMES = {
   // LivePort tables
   BRIDGE_KEYS: "bridge_keys",
   TUNNELS: "tunnels",
+  STATIC_SUBDOMAINS: "static_subdomains",
 } as const;
 
 /**
@@ -147,6 +148,20 @@ CREATE TABLE IF NOT EXISTS tunnels (
 `.trim();
 
 /**
+ * SQL Schema for Static Subdomains table (for $2.50/month premium feature)
+ */
+export const STATIC_SUBDOMAINS_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS static_subdomains (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  subdomain TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  deleted_at TIMESTAMP,
+  status TEXT DEFAULT 'active'
+);
+`.trim();
+
+/**
  * Column definitions for Better Auth User table (mech-storage API format)
  */
 export const USER_COLUMNS: ColumnDefinition[] = [
@@ -241,6 +256,18 @@ export const TUNNELS_COLUMNS: ColumnDefinition[] = [
 ];
 
 /**
+ * Column definitions for Static Subdomains table (mech-storage API format)
+ */
+export const STATIC_SUBDOMAINS_COLUMNS: ColumnDefinition[] = [
+  { name: "id", type: "text", primaryKey: true },
+  { name: "user_id", type: "text", nullable: false },
+  { name: "subdomain", type: "text", nullable: false, unique: true },
+  { name: "created_at", type: "timestamp", nullable: true, defaultValue: "NOW()" },
+  { name: "deleted_at", type: "timestamp", nullable: true },
+  { name: "status", type: "text", nullable: true, defaultValue: "'active'" },
+];
+
+/**
  * Create a single table using the mech-storage API
  * @param db - MechStorageClient instance
  * @param tableName - Name of the table to create
@@ -297,6 +324,13 @@ export async function createTunnelsTable(db: MechStorageClient): Promise<void> {
 }
 
 /**
+ * Create the Static Subdomains table
+ */
+export async function createStaticSubdomainsTable(db: MechStorageClient): Promise<void> {
+  await createTable(db, TABLE_NAMES.STATIC_SUBDOMAINS, STATIC_SUBDOMAINS_COLUMNS);
+}
+
+/**
  * Create all Better Auth tables
  */
 export async function createAuthTables(db: MechStorageClient): Promise<void> {
@@ -315,6 +349,7 @@ export async function createAllTables(db: MechStorageClient): Promise<void> {
   // Then create LivePort tables
   await createBridgeKeysTable(db);
   await createTunnelsTable(db);
+  await createStaticSubdomainsTable(db);
 }
 
 /**
@@ -322,6 +357,7 @@ export async function createAllTables(db: MechStorageClient): Promise<void> {
  */
 export async function dropAllTables(db: MechStorageClient): Promise<void> {
   // Drop in reverse order of dependencies
+  await db.dropTable(TABLE_NAMES.STATIC_SUBDOMAINS);
   await db.dropTable(TABLE_NAMES.TUNNELS);
   await db.dropTable(TABLE_NAMES.BRIDGE_KEYS);
   await db.dropTable(TABLE_NAMES.VERIFICATION);
@@ -342,6 +378,7 @@ export async function checkTablesExist(
   verification: boolean;
   bridgeKeys: boolean;
   tunnels: boolean;
+  staticSubdomains: boolean;
   authTablesExist: boolean;
   allExist: boolean;
 }> {
@@ -354,6 +391,7 @@ export async function checkTablesExist(
   const verification = tableNames.has(TABLE_NAMES.VERIFICATION);
   const bridgeKeys = tableNames.has(TABLE_NAMES.BRIDGE_KEYS);
   const tunnels = tableNames.has(TABLE_NAMES.TUNNELS);
+  const staticSubdomains = tableNames.has(TABLE_NAMES.STATIC_SUBDOMAINS);
 
   const authTablesExist = user && session && account && verification;
 
@@ -364,8 +402,9 @@ export async function checkTablesExist(
     verification,
     bridgeKeys,
     tunnels,
+    staticSubdomains,
     authTablesExist,
-    allExist: authTablesExist && bridgeKeys && tunnels,
+    allExist: authTablesExist && bridgeKeys && tunnels && staticSubdomains,
   };
 }
 
@@ -378,12 +417,14 @@ export async function initializeSchema(
   authTablesCreated: boolean;
   bridgeKeysCreated: boolean;
   tunnelsCreated: boolean;
+  staticSubdomainsCreated: boolean;
 }> {
   const status = await checkTablesExist(db);
   const result = {
     authTablesCreated: false,
     bridgeKeysCreated: false,
     tunnelsCreated: false,
+    staticSubdomainsCreated: false,
   };
 
   if (!status.authTablesExist) {
@@ -399,6 +440,11 @@ export async function initializeSchema(
   if (!status.tunnels) {
     await createTunnelsTable(db);
     result.tunnelsCreated = true;
+  }
+
+  if (!status.staticSubdomains) {
+    await createStaticSubdomainsTable(db);
+    result.staticSubdomainsCreated = true;
   }
 
   return result;

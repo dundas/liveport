@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 import { createHttpHandler } from "./http-handler";
 import { handleConnection } from "./websocket-handler";
 import { getConnectionManager } from "./connection-manager";
+import { startMetering, stopMetering, syncMetrics } from "./metering";
 import type { TunnelServerConfig } from "./types";
 
 // Default configuration
@@ -101,14 +102,34 @@ export function startServer(config: Partial<TunnelServerConfig> = {}): void {
 
   console.log(`WebSocket server listening on ws://${cfg.host}:${cfg.port}/connect`);
 
+  // Start metering service
+  startMetering({
+    syncIntervalMs: 60000, // Sync every 60 seconds
+    enabled: process.env.METERING_ENABLED !== "false",
+  });
+
   // Graceful shutdown
-  const shutdown = () => {
+  const shutdown = async () => {
     console.log("\nShutting down...");
+
+    // Stop metering service
+    stopMetering();
 
     const connectionManager = getConnectionManager();
     const connections = connectionManager.getAll();
 
     console.log(`Closing ${connections.length} active connections...`);
+
+    // Sync final metrics before closing
+    if (connections.length > 0) {
+      console.log("Syncing final metrics...");
+      try {
+        await syncMetrics();
+        console.log("Final metrics synced");
+      } catch (err) {
+        console.error("Failed to sync final metrics:", err);
+      }
+    }
 
     // Close all WebSocket connections
     for (const conn of connections) {
@@ -149,4 +170,5 @@ export { handleConnection } from "./websocket-handler";
 export { getConnectionManager } from "./connection-manager";
 export { getKeyValidator } from "./key-validator";
 export { generateSubdomain, generateUniqueSubdomain } from "./subdomain";
+export { startMetering, stopMetering, syncMetrics } from "./metering";
 export * from "./types";

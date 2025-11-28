@@ -177,10 +177,12 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
 
     // Get body if present
     let body: string | undefined;
+    let requestBodySize = 0;
     if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
       try {
         const bodyBytes = await c.req.arrayBuffer();
         if (bodyBytes.byteLength > 0) {
+          requestBodySize = bodyBytes.byteLength;
           body = Buffer.from(bodyBytes).toString("base64");
         }
       } catch {
@@ -244,9 +246,15 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
 
       // Decode body if present
       let responseBody: Uint8Array | null = null;
+      let responseBodySize = 0;
       if (response.body) {
         responseBody = new Uint8Array(Buffer.from(response.body, "base64"));
+        responseBodySize = responseBody.byteLength;
       }
+
+      // Track bytes transferred for metering (request + response)
+      const totalBytes = requestBodySize + responseBodySize;
+      connectionManager.addBytesTransferred(subdomain, totalBytes);
 
       return new Response(responseBody, {
         status: response.status,
