@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { getBridgeKeyRepository } from "@/lib/db";
-import { getLogger } from "@liveport/shared/logging";
+import { getLogger } from "@/lib/logger";
 
 const logger = getLogger("dashboard:api:tunnels");
 

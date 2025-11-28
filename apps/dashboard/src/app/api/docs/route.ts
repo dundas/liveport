@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { getLogger } from "@liveport/shared/logging";
+import { getLogger } from "@/lib/logger";
 
 const logger = getLogger("dashboard:api:docs");
 

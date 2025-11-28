@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { validateBridgeKey } from "@/lib/bridge-key-auth";
-import { getLogger } from "@liveport/shared/logging";
+import { getLogger } from "@/lib/logger";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const logger = getLogger("dashboard:api:agent:tunnels:wait");

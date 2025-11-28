@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { getBridgeKeyRepository } from "@/lib/db";
-import { getLogger } from "@liveport/shared/logging";
+import { getLogger } from "@/lib/logger";
 
 const logger = getLogger("dashboard:api:keys");
 
@@ -19,6 +19,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let keyId: string | undefined;
+  let userId: string | undefined;
+  
   try {
     // Get session
     const headersList = await headers();
@@ -27,8 +30,11 @@ export async function DELETE(
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    
+    userId = session.user.id;
 
     const { id } = await params;
+    keyId = id;
 
     if (!id) {
       return NextResponse.json({ error: "Key ID required" }, { status: 400 });
@@ -60,7 +66,7 @@ export async function DELETE(
       message: "Key revoked successfully",
     });
   } catch (error) {
-    logger.error({ err: error, keyId: id, userId: session.user.id }, "Failed to revoke bridge key");
+    logger.error({ err: error, keyId, userId }, "Failed to revoke bridge key");
     return NextResponse.json(
       { error: "Failed to revoke key" },
       { status: 500 }

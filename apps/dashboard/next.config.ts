@@ -3,10 +3,43 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["@liveport/shared", "pino", "pino-pretty", "thread-stream", "ioredis"],
+  
+  // Externalize Node.js packages that shouldn't be bundled
+  serverExternalPackages: [
+    "@liveport/shared",
+    "pino",
+    "pino-pretty", 
+    "thread-stream",
+    "ioredis",
+    "sonic-boom",
+  ],
 
   // Empty turbopack config to acknowledge we're using Turbopack
   turbopack: {},
+
+  // Webpack config to handle pino and other Node.js modules
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Externalize pino and related packages to avoid bundling issues
+      config.externals = config.externals || [];
+      config.externals.push({
+        'pino': 'commonjs pino',
+        'pino-pretty': 'commonjs pino-pretty',
+        'thread-stream': 'commonjs thread-stream',
+        'sonic-boom': 'commonjs sonic-boom',
+      });
+    }
+
+    // Ignore test files from node_modules
+    config.module = config.module || {};
+    config.module.rules = config.module.rules || [];
+    config.module.rules.push({
+      test: /\.test\.(js|ts)$/,
+      loader: 'ignore-loader',
+    });
+
+    return config;
+  },
 
   // Security headers
   async headers() {

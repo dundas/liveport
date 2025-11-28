@@ -10,7 +10,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { getBridgeKeyRepository } from "@/lib/db";
 import { generateBridgeKey, getKeyPrefix, hashKey, type BridgeKey } from "@liveport/shared";
-import { getLogger } from "@liveport/shared/logging";
+import { getLogger } from "@/lib/logger";
 
 const logger = getLogger("dashboard:api:keys");
 
@@ -59,6 +59,8 @@ export async function GET() {
  * POST /api/keys - Create a new bridge key
  */
 export async function POST(request: NextRequest) {
+  let userId: string | undefined;
+  
   try {
     // Get session
     const headersList = await headers();
@@ -67,6 +69,8 @@ export async function POST(request: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    
+    userId = session.user.id;
 
     // Parse request body
     const body = await request.json();
@@ -95,7 +99,7 @@ export async function POST(request: NextRequest) {
     // Create in database
     const repo = getBridgeKeyRepository();
     const created = await repo.create({
-      userId: session.user.id,
+      userId,
       name,
       keyHash,
       keyPrefix,
@@ -116,7 +120,7 @@ export async function POST(request: NextRequest) {
       createdAt: created.createdAt.toISOString(),
     });
   } catch (error) {
-    logger.error({ err: error, userId: session.user.id }, "Failed to create bridge key");
+    logger.error({ err: error, userId }, "Failed to create bridge key");
     return NextResponse.json(
       { error: "Failed to create key" },
       { status: 500 }
