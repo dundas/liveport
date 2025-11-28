@@ -115,19 +115,30 @@ export async function checkRateLimitAsync(
   if (redis) {
     // Use Redis for distributed rate limiting
     try {
-      const multi = redis.multi();
-      multi.incr(key);
-      multi.pttl(key);
-      const results = await multi.exec();
+      // Lua script to atomically increment and set expiry if needed
+      // Prevents race conditions where multiple requests set expiry
+      const script = `
+        local key = KEYS[1]
+        local windowMs = tonumber(ARGV[1])
+        
+        local count = redis.call("INCR", key)
+        if count == 1 then
+          redis.call("PEXPIRE", key, windowMs)
+        end
+        local ttl = redis.call("PTTL", key)
+        
+        return {count, ttl}
+      `;
 
-      if (!results) {
-        throw new Error("Redis multi failed");
+      const result = await redis.eval(script, 1, key, windowMs) as [number, number];
+      const count = result[0];
+      let ttl = result[1];
+
+      // Handle case where key expired just before PTTL call
+      if (ttl === -2) {
+        ttl = windowMs;
       }
-
-      const count = results[0][1] as number;
-      let ttl = results[1][1] as number;
-
-      // Set expiry on first request
+      // Handle case where key exists but has no expiry (shouldn't happen with this script but good safety)
       if (ttl === -1) {
         await redis.pexpire(key, windowMs);
         ttl = windowMs;
@@ -146,7 +157,7 @@ export async function checkRateLimitAsync(
 
       return {
         success: true,
-        remaining: maxRequests - count,
+        remaining: Math.max(0, maxRequests - count),
         limit: maxRequests,
         resetAt,
       };

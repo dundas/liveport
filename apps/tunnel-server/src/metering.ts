@@ -122,7 +122,9 @@ export async function syncMetrics(): Promise<void> {
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           ON CONFLICT (id) DO UPDATE SET
             request_count = EXCLUDED.request_count,
-            bytes_transferred = EXCLUDED.bytes_transferred`,
+            bytes_transferred = EXCLUDED.bytes_transferred,
+            updated_at = NOW()
+          WHERE tunnels.disconnected_at IS NULL`,
           [
             conn.id,
             conn.userId,

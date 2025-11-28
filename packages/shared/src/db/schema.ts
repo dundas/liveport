@@ -151,6 +151,10 @@ CREATE INDEX IF NOT EXISTS idx_tunnels_user_id ON tunnels(user_id);
 CREATE INDEX IF NOT EXISTS idx_tunnels_connected_at ON tunnels(connected_at);
 CREATE INDEX IF NOT EXISTS idx_tunnels_bridge_key_id ON tunnels(bridge_key_id);
 CREATE INDEX IF NOT EXISTS idx_tunnels_user_connected ON tunnels(user_id, connected_at);
+-- Partial index for billing (completed tunnels)
+CREATE INDEX IF NOT EXISTS idx_tunnels_billing ON tunnels(user_id, connected_at, disconnected_at) WHERE disconnected_at IS NOT NULL;
+-- Partial index for finalization (active tunnels)
+CREATE INDEX IF NOT EXISTS idx_tunnels_active ON tunnels(id) WHERE disconnected_at IS NULL;
 `.trim();
 
 /**

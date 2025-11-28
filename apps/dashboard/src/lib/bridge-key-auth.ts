@@ -7,6 +7,9 @@
 import { NextRequest } from "next/server";
 import { getBridgeKeyRepository } from "./db";
 import { getKeyPrefix, verifyKey, isBcryptHash, legacySha256Hash } from "@liveport/shared";
+import { getLogger } from "./logger";
+
+const logger = getLogger("dashboard:auth:bridge-key");
 
 export interface AuthResult {
   valid: boolean;
@@ -118,7 +121,7 @@ export async function validateBridgeKey(request: NextRequest): Promise<AuthResul
       userId: keyRecord.userId,
     };
   } catch (error) {
-    console.error("[BridgeKeyAuth] Error validating key:", error);
+    logger.error({ err: error }, "Error validating key");
     return {
       valid: false,
       error: "Internal error",

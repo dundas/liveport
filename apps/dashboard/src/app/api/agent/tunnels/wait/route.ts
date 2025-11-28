@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateBridgeKey } from "@/lib/bridge-key-auth";
 import { getLogger } from "@/lib/logger";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimitAsync } from "@/lib/rate-limit";
 
 const logger = getLogger("dashboard:api:agent:tunnels:wait");
 
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Rate limiting - 30 requests per minute per key (lower for long-polling)
-  const rateLimit = await checkRateLimit(auth.keyId!, {
+  const rateLimit = await checkRateLimitAsync(auth.keyId!, {
     maxRequests: 30,
     windowMs: 60_000,
     keyPrefix: "agent:tunnels:wait",

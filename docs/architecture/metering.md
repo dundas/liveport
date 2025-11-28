@@ -126,7 +126,7 @@ connectionManager.addBytesTransferred(subdomain, totalBytes);
 ### Metering Service (`metering.ts`)
 
 **Periodic Sync**:
-- Runs every 60 seconds (configurable via `METERING_SYNC_INTERVAL_MS`)
+- Runs every 30 seconds (configurable via `METERING_SYNC_INTERVAL_MS`)
 - Updates all active tunnels in database
 - Creates tunnel records if they don't exist (for new connections)
 
@@ -140,7 +140,7 @@ connectionManager.addBytesTransferred(subdomain, totalBytes);
 # Disable metering (for testing)
 METERING_ENABLED=false
 
-# Change sync interval (default: 60000ms)
+# Change sync interval (default: 30000ms)
 METERING_SYNC_INTERVAL_MS=30000
 ```
 
