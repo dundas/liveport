@@ -26,11 +26,11 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r bg-card">
-      <div className="flex h-16 items-center border-b px-6">
+    <aside className="flex h-screen w-64 flex-col border-r border-border bg-background">
+      <div className="flex h-16 items-center border-b border-border px-6">
         <Link href="/" className="flex items-center gap-2">
           <Radio className="h-6 w-6 text-primary" />
-          <span className="text-xl font-bold">LivePort</span>
+          <span className="text-xl font-bold font-mono uppercase tracking-tighter">LIVE<span className="text-primary">PORT</span>_</span>
         </Link>
       </div>
       <nav className="flex-1 space-y-1 p-4">
@@ -41,7 +41,7 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-3 px-3 py-2 text-sm font-mono uppercase tracking-wider transition-colors",
                 isActive
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -53,14 +53,14 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="border-t p-4">
-        <div className="flex items-center gap-3 rounded-lg px-3 py-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-medium">
+      <div className="border-t border-border p-4">
+        <div className="flex items-center gap-3 px-3 py-2">
+          <div className="flex h-8 w-8 items-center justify-center border border-primary bg-black text-primary text-sm font-mono uppercase">
             {session?.user?.name?.[0]?.toUpperCase() || session?.user?.email?.[0]?.toUpperCase() || "?"}
           </div>
           <div className="flex-1 truncate">
-            <p className="text-sm font-medium">{session?.user?.name || "User"}</p>
-            <p className="text-xs text-muted-foreground truncate">{session?.user?.email || ""}</p>
+            <p className="text-sm font-mono uppercase">{session?.user?.name || "User"}</p>
+            <p className="text-xs text-muted-foreground font-mono truncate">{session?.user?.email || ""}</p>
           </div>
         </div>
         <Button
