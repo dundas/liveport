@@ -24,7 +24,7 @@ vi.mock("ws", () => {
 
 describe("TunnelClient", () => {
   const defaultConfig: TunnelClientConfig = {
-    serverUrl: "https://tunnel.liveport.dev",
+    serverUrl: "https://liveport-tunnel.fly.dev",
     bridgeKey: "lpk_test123",
     localPort: 3000,
   };
@@ -121,7 +121,7 @@ describe("TunnelClient", () => {
       const { TunnelClient } = await import("./tunnel-client");
       const client = new TunnelClient({
         ...defaultConfig,
-        serverUrl: "https://tunnel.liveport.dev",
+        serverUrl: "https://liveport-tunnel.fly.dev",
       });
 
       // We can't directly test private methods, but we can verify

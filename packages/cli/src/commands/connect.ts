@@ -48,7 +48,7 @@ export async function connectCommand(
   if (!bridgeKey) {
     logger.error("Bridge key required. Use --key, set LIVEPORT_KEY, or run 'liveport config set key <your-key>'");
     logger.blank();
-    logger.info("Get a bridge key at: https://app.liveport.dev/keys");
+    logger.info("Get a bridge key at: https://liveport.dev/keys");
     process.exit(1);
   }
 
