@@ -7,7 +7,8 @@
  * - Request ID tracking for distributed tracing
  */
 
-import pino, { Logger, LoggerOptions } from "pino";
+import pino from "pino";
+import type { Logger, LoggerOptions } from "pino";
 
 export interface LogContext {
   requestId?: string;
@@ -180,4 +181,4 @@ export function logRequest(
   );
 }
 
-export { Logger };
+export type { Logger };

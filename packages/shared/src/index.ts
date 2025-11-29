@@ -12,9 +12,9 @@ export * from "./keys";
 // Crypto
 export { hashKey, verifyKey, legacySha256Hash, isBcryptHash } from "./crypto";
 
-// Auth
-export { mechStorageAdapter } from "./auth";
-export type { MechStorageAdapterConfig } from "./auth";
+// Auth is exported separately via @liveport/shared/auth
+// to avoid bundling better-auth in tunnel-server builds
+// Use: import { mechStorageAdapter } from "@liveport/shared/auth"
 
 // Logging is exported separately via @liveport/shared/logging
 // to avoid bundling pino in Next.js builds

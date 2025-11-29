@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
-import { MechStorageClient, mechStorageAdapter } from "@liveport/shared";
+import { MechStorageClient } from "@liveport/shared";
+import { mechStorageAdapter } from "@liveport/shared/auth";
 
 // Initialize database client
 const db = new MechStorageClient({

@@ -46,3 +46,4 @@ test-results/
 # Misc
 .cache/
 *.pem
+.vercel
