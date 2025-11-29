@@ -108,11 +108,11 @@ describe("HTTP Handler", () => {
         body: Buffer.from(JSON.stringify({ success: true })).toString("base64"),
       });
 
-      const req = new Request("https://test-subdomain.liveport.dev/api/test", {
+      const req = new Request("https://test-subdomain.liveport.online/api/test", {
         method: "POST",
         headers: { 
           "content-type": "application/json",
-          "host": "test-subdomain.liveport.dev" 
+          "host": "test-subdomain.liveport.online" 
         },
         body: JSON.stringify({ foo: "bar" }),
       });
@@ -128,9 +128,9 @@ describe("HTTP Handler", () => {
     it("should return 404 for invalid subdomain", async () => {
       mocks.connectionManager.findBySubdomain.mockReturnValue(null);
 
-      const req = new Request("https://invalid.liveport.dev/", {
+      const req = new Request("https://invalid.liveport.online/", {
         method: "GET",
-        headers: { "host": "invalid.liveport.dev" }
+        headers: { "host": "invalid.liveport.online" }
       });
 
       // This returns 404 because the subdomain is invalid according to extractSubdomain
@@ -151,9 +151,9 @@ describe("HTTP Handler", () => {
       // Create a large body (10MB + 1 byte)
       const largeBody = new Uint8Array(10 * 1024 * 1024 + 1).fill(65); // 'A'
       
-      const req = new Request("https://test-subdomain.liveport.dev/upload", {
+      const req = new Request("https://test-subdomain.liveport.online/upload", {
         method: "POST",
-        headers: { "host": "test-subdomain.liveport.dev" },
+        headers: { "host": "test-subdomain.liveport.online" },
         body: largeBody,
       });
 
@@ -181,9 +181,9 @@ describe("HTTP Handler", () => {
       // Create a body just within limit (1MB)
       const body = new Uint8Array(1 * 1024 * 1024).fill(65);
       
-      const req = new Request("https://test-subdomain.liveport.dev/upload", {
+      const req = new Request("https://test-subdomain.liveport.online/upload", {
         method: "POST",
-        headers: { "host": "test-subdomain.liveport.dev" },
+        headers: { "host": "test-subdomain.liveport.online" },
         body: body,
       });
 
@@ -199,9 +199,9 @@ describe("HTTP Handler", () => {
       mocks.connectionManager.findBySubdomain.mockReturnValue(mocks.connection);
       mocks.connectionManager.registerPendingRequest.mockRejectedValue(new Error("Tunnel disconnected"));
 
-      const req = new Request("https://test-subdomain.liveport.dev/api", {
+      const req = new Request("https://test-subdomain.liveport.online/api", {
         method: "GET",
-        headers: { "host": "test-subdomain.liveport.dev" },
+        headers: { "host": "test-subdomain.liveport.online" },
       });
 
       const res = await app.request(req);
@@ -217,9 +217,9 @@ describe("HTTP Handler", () => {
       mocks.connectionManager.findBySubdomain.mockReturnValue(mocks.connection);
       mocks.connectionManager.registerPendingRequest.mockRejectedValue(new Error("Request timeout"));
 
-      const req = new Request("https://test-subdomain.liveport.dev/api", {
+      const req = new Request("https://test-subdomain.liveport.online/api", {
         method: "GET",
-        headers: { "host": "test-subdomain.liveport.dev" },
+        headers: { "host": "test-subdomain.liveport.online" },
       });
 
       const res = await app.request(req);

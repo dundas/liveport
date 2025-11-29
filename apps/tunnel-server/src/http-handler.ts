@@ -14,7 +14,7 @@ import type { HttpRequestMessage, HttpResponsePayload } from "./types";
 
 const logger = createLogger({ service: "tunnel-server:http" });
 
-const DEFAULT_BASE_DOMAIN = process.env.BASE_DOMAIN || "liveport.dev";
+const DEFAULT_BASE_DOMAIN = process.env.BASE_DOMAIN || "liveport.online";
 const DEFAULT_REQUEST_TIMEOUT = 30000; // 30 seconds
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB max body size
 

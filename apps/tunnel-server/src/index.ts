@@ -22,7 +22,7 @@ const logger = createLogger({ service: "tunnel-server" });
 const defaultConfig: TunnelServerConfig = {
   port: parseInt(process.env.PORT || "8080", 10),
   host: process.env.HOST || "0.0.0.0",
-  baseDomain: process.env.BASE_DOMAIN || "liveport.dev",
+  baseDomain: process.env.BASE_DOMAIN || "liveport.online",
   connectionTimeout: 30000,
   requestTimeout: 30000,
   heartbeatInterval: 10000,

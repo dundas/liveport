@@ -117,13 +117,12 @@ export async function syncMetrics(): Promise<void> {
         // ON CONFLICT handles the case where record already exists
         await db.query(
           `INSERT INTO tunnels (
-            id, user_id, bridge_key_id, subdomain, local_port, 
+            id, user_id, bridge_key_id, subdomain, local_port,
             public_url, region, connected_at, request_count, bytes_transferred
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           ON CONFLICT (id) DO UPDATE SET
             request_count = EXCLUDED.request_count,
-            bytes_transferred = EXCLUDED.bytes_transferred,
-            updated_at = NOW()
+            bytes_transferred = EXCLUDED.bytes_transferred
           WHERE tunnels.disconnected_at IS NULL`,
           [
             conn.id,
@@ -131,7 +130,7 @@ export async function syncMetrics(): Promise<void> {
             conn.keyId,
             conn.subdomain,
             conn.localPort,
-            `https://${conn.subdomain}.${process.env.BASE_DOMAIN || "liveport.dev"}`,
+            `https://${conn.subdomain}.${process.env.BASE_DOMAIN || "liveport.online"}`,
             process.env.FLY_REGION || "us-east",
             conn.createdAt.toISOString(),
             conn.requestCount,
@@ -204,7 +203,7 @@ export async function finalizeTunnelMetrics(
           tunnelInfo.keyId,
           tunnelInfo.subdomain,
           tunnelInfo.localPort,
-          `https://${tunnelInfo.subdomain}.${process.env.BASE_DOMAIN || "liveport.dev"}`,
+          `https://${tunnelInfo.subdomain}.${process.env.BASE_DOMAIN || "liveport.online"}`,
           process.env.FLY_REGION || "us-east",
           tunnelInfo.createdAt.toISOString(),
           requestCount,

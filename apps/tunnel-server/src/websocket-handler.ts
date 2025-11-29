@@ -56,7 +56,7 @@ async function getRateLimiter(): Promise<RateLimiter | null> {
   }
 }
 
-const DEFAULT_BASE_DOMAIN = process.env.BASE_DOMAIN || "liveport.dev";
+const DEFAULT_BASE_DOMAIN = process.env.BASE_DOMAIN || "liveport.online";
 
 export interface WebSocketHandlerConfig {
   baseDomain: string;
