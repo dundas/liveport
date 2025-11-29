@@ -109,30 +109,26 @@ curl -X POST https://liveport-private-dashboard.vercel.app/api/keys \
 
 ### Critical for Production
 
-#### 1. DNS Configuration (liveport.online)
+#### 1. DNS Configuration
 
-**Status**: Not configured
+**Status**: ✅ Complete
 **Priority**: Critical
-**Effort**: 1-2 hours
+**Effort**: Completed
 
-The tunnel server assigns subdomains like `crude-bass-mppx.liveport.online`, but DNS isn't configured to route these to the tunnel server.
+Both domains are now fully configured and operational.
 
-**Required**:
-- Configure wildcard DNS: `*.liveport.online` → Fly.io tunnel server
-- Configure root domain: `liveport.online` → Redirect to liveport.dev (optional)
-- Set up SSL certificates via Cloudflare
+**liveport.online (Tunnel Subdomains)**:
+- Wildcard CNAME `*.liveport.online` → `liveport-tunnel.fly.dev` (proxied via Cloudflare)
+- SSL: Google Trust Services certificate via Cloudflare
+- Verified working: `https://test-subdomain.liveport.online` returns 502 (no active tunnel)
 
-**Quick Setup** (Cloudflare):
-1. Add `liveport.online` to Cloudflare
-2. Update nameservers at your registrar
-3. Create CNAME record:
-   - **Name**: `*` (wildcard)
-   - **Target**: `liveport-tunnel.fly.dev`
-   - **Proxy status**: Proxied (orange cloud)
-4. Enable SSL/TLS Full (strict) mode
-5. Enable "Always Use HTTPS"
+**liveport.dev (Dashboard)**:
+- CNAME `liveport.dev` → `cname.vercel-dns.com`
+- CNAME `www.liveport.dev` → `cname.vercel-dns.com`
+- SSL: Let's Encrypt certificate via Vercel
+- Verified working: `https://liveport.dev` returns the dashboard
 
-**Full Guide**: See `docs/deployment/cloudflare-setup.md` for detailed instructions including security configuration, WAF rules, and production checklist.
+**Full Guide**: See `docs/deployment/cloudflare-setup.md` for security configuration, WAF rules, and production checklist.
 
 #### 2. CLI Application
 
