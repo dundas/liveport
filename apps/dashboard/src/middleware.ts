@@ -12,8 +12,10 @@ export function middleware(request: NextRequest) {
     (path) => pathname === path || pathname.startsWith(path + "/")
   );
 
-  // Get session token from cookie
-  const sessionToken = request.cookies.get("better-auth.session_token");
+  // Get session token from cookie (may have __Secure- prefix in production)
+  const sessionToken = 
+    request.cookies.get("__Secure-better-auth.session_token") ||
+    request.cookies.get("better-auth.session_token");
 
   // If accessing protected route without session, redirect to login
   if (!isPublicPath && !sessionToken) {
