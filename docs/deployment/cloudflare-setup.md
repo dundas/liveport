@@ -11,9 +11,23 @@ This guide walks through configuring Cloudflare as the edge layer for LivePort. 
 
 ## Prerequisites
 
-- Domain name (e.g., `liveport.dev`)
+- Domain names:
+  - `liveport.dev` - Production dashboard and API
+  - `liveport.online` - Tunnel subdomains (user tunnels)
 - Cloudflare account (free tier is sufficient)
-- Fly.io apps deployed (`liveport-tunnel`, `liveport-api`, `liveport-dashboard`)
+- Fly.io apps deployed (`liveport-tunnel`)
+- Vercel deployment for dashboard
+
+## Domain Strategy
+
+LivePort uses two domains:
+- **`liveport.dev`** - The "brand" domain for the dashboard, marketing, and user-facing portal
+- **`liveport.online`** - The "tunnel" domain for user tunnel subdomains (e.g., `crude-bass-mppx.liveport.online`)
+
+This separation provides:
+- Clear branding for the product
+- Isolated security zones (tunnel traffic separate from app traffic)
+- Easier DNS management and SSL certificates
 
 ## Step 1: Add Domain to Cloudflare
 
@@ -22,9 +36,16 @@ This guide walks through configuring Cloudflare as the edge layer for LivePort. 
 2. Sign up for a free account
 3. Verify your email
 
-### 1.2 Add Site
+### 1.2 Add Sites
+**Add liveport.dev:**
 1. Click "Add a Site" in the Cloudflare dashboard
 2. Enter your domain: `liveport.dev`
+3. Select the **Free** plan
+4. Click "Continue"
+
+**Add liveport.online:**
+1. Click "Add a Site" again
+2. Enter your domain: `liveport.online`
 3. Select the **Free** plan
 4. Click "Continue"
 
@@ -46,28 +67,32 @@ dig NS liveport.dev +short
 
 ## Step 2: Configure DNS Records
 
-### 2.1 API Subdomain
-Point `api.liveport.dev` to your Fly.io API server.
+### For liveport.dev (Dashboard Domain)
+
+#### 2.1 Dashboard (Vercel)
+Point `liveport.dev` to Vercel (where the dashboard is deployed).
 
 **DNS Record**:
 - **Type**: `CNAME`
-- **Name**: `api`
-- **Target**: `liveport-api.fly.dev`
-- **Proxy status**: ✅ **Proxied** (orange cloud)
+- **Name**: `@` (root domain)
+- **Target**: `cname.vercel-dns.com`
+- **Proxy status**: ⬜ **DNS only** (gray cloud - Vercel handles SSL)
 - **TTL**: Auto
 
-### 2.2 Dashboard Subdomain
-Point `app.liveport.dev` (or root `liveport.dev`) to your dashboard.
+> **Note**: Vercel requires DNS-only mode (no Cloudflare proxy) to issue its own SSL certificate.
 
+#### 2.2 WWW Subdomain
 **DNS Record**:
 - **Type**: `CNAME`
-- **Name**: `app` (or `@` for root)
-- **Target**: `liveport-dashboard.fly.dev`
-- **Proxy status**: ✅ **Proxied** (orange cloud)
+- **Name**: `www`
+- **Target**: `cname.vercel-dns.com`
+- **Proxy status**: ⬜ **DNS only** (gray cloud)
 - **TTL**: Auto
 
-### 2.3 Wildcard for Tunnel Subdomains
-Point `*.liveport.dev` to your tunnel server.
+### For liveport.online (Tunnel Domain)
+
+#### 2.3 Wildcard for Tunnel Subdomains (Critical)
+Point `*.liveport.online` to your Fly.io tunnel server.
 
 **DNS Record**:
 - **Type**: `CNAME`
@@ -76,25 +101,31 @@ Point `*.liveport.dev` to your tunnel server.
 - **Proxy status**: ✅ **Proxied** (orange cloud)
 - **TTL**: Auto
 
-### 2.4 Root Domain (Optional)
-If you want `liveport.dev` to redirect to `app.liveport.dev`:
+> **Note**: This is the most important record. All tunnel URLs like `crude-bass-mppx.liveport.online` will route through this wildcard.
+
+#### 2.4 Root Domain (Optional)
+Point `liveport.online` to a landing page or redirect to `liveport.dev`.
 
 **DNS Record**:
 - **Type**: `CNAME`
 - **Name**: `@`
-- **Target**: `liveport-dashboard.fly.dev`
-- **Proxy status**: ✅ **Proxied**
+- **Target**: `liveport-tunnel.fly.dev` (or redirect to liveport.dev)
+- **Proxy status**: ✅ **Proxied** (orange cloud)
 - **TTL**: Auto
 
 ### Verify DNS
 ```bash
-# Check API subdomain
-dig api.liveport.dev +short
+# Check dashboard domain
+dig liveport.dev +short
+# Should show Vercel IPs
 
-# Check wildcard (any subdomain)
-dig xyz123.liveport.dev +short
+# Check tunnel wildcard (any subdomain on liveport.online)
+dig xyz123.liveport.online +short
+# Should resolve to Cloudflare IPs (for proxied) or Fly.io IPs
 
-# Both should resolve to Cloudflare IPs (not Fly.io IPs directly)
+# Test the tunnel server
+curl -I https://liveport-tunnel.fly.dev/health
+# Should return 200 OK
 ```
 
 ## Step 3: SSL/TLS Configuration
@@ -248,58 +279,72 @@ If you want `liveport.dev` → `app.liveport.dev`:
 
 ### 8.1 Test DNS Resolution
 ```bash
-# API
-curl -I https://api.liveport.dev/health
-# Should return 200 OK
-
 # Dashboard
-curl -I https://app.liveport.dev
+curl -I https://liveport.dev
+# Should return 200 OK from Vercel
+
+# Tunnel server health
+curl -I https://liveport-tunnel.fly.dev/health
 # Should return 200 OK
 
-# Wildcard tunnel
-curl -I https://test-subdomain.liveport.dev
+# Wildcard tunnel (via liveport.online)
+curl -I https://test-subdomain.liveport.online
 # Should return 502 (no tunnel active) or 200 (if tunnel exists)
 ```
 
 ### 8.2 Test SSL
 ```bash
-# Check SSL certificate issuer
-openssl s_client -connect api.liveport.dev:443 -servername api.liveport.dev < /dev/null 2>/dev/null | openssl x509 -noout -issuer
-# Should show: Cloudflare
+# Check SSL certificate for tunnel domain (proxied through Cloudflare)
+openssl s_client -connect test.liveport.online:443 -servername test.liveport.online < /dev/null 2>/dev/null | openssl x509 -noout -issuer
+# Should show: Cloudflare (or Let's Encrypt if not proxied)
+
+# Check SSL certificate for dashboard (Vercel)
+openssl s_client -connect liveport.dev:443 -servername liveport.dev < /dev/null 2>/dev/null | openssl x509 -noout -issuer
+# Should show: Let's Encrypt (Vercel's certificate)
 ```
 
 ### 8.3 Test DDoS Protection
 ```bash
-# Simulate rate limiting (should get blocked after 100 requests)
-for i in {1..150}; do curl -s https://api.liveport.dev/health > /dev/null; done
+# Simulate rate limiting on tunnel server (should get blocked after 100 requests)
+for i in {1..150}; do curl -s https://liveport-tunnel.fly.dev/health > /dev/null; done
 # After ~100 requests, should receive 429 or CAPTCHA challenge
 ```
 
 ### 8.4 Test Caching
 ```bash
+# Caching is less relevant for tunnel traffic (dynamic), but for dashboard:
 # First request (cache MISS)
-curl -I https://app.liveport.dev/static/logo.png
-# Check header: cf-cache-status: MISS
+curl -I https://liveport.dev/_next/static/css/app.css
+# Check header for caching behavior (Vercel handles caching)
 
-# Second request (cache HIT)
-curl -I https://app.liveport.dev/static/logo.png
-# Check header: cf-cache-status: HIT
+# For tunnel domain, traffic should NOT be cached (it's dynamic proxied content)
 ```
 
 ## Step 9: Production Checklist
 
+### liveport.dev (Dashboard)
 - [ ] Nameservers updated and propagated
-- [ ] DNS records created (api, app, wildcard)
+- [ ] CNAME record pointing to Vercel
+- [ ] DNS-only mode (no Cloudflare proxy)
+- [ ] Vercel custom domain verified
+- [ ] SSL working via Vercel
+
+### liveport.online (Tunnels)
+- [ ] Nameservers updated and propagated
+- [ ] Wildcard CNAME `*` → `liveport-tunnel.fly.dev`
 - [ ] SSL/TLS mode set to Full (strict)
 - [ ] Always Use HTTPS enabled
 - [ ] WAF enabled with OWASP rules
 - [ ] Rate limiting configured
 - [ ] Bot protection enabled
-- [ ] Caching rules configured
+- [ ] Cache bypass configured for tunnel traffic
 - [ ] Compression enabled (Brotli)
 - [ ] HTTP/3 enabled
+
+### General
 - [ ] Analytics alerts configured
 - [ ] All endpoints tested and working
+- [ ] End-to-end tunnel test successful
 
 ## Troubleshooting
 

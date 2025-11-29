@@ -43,7 +43,7 @@ LivePort is an AI agent-focused tunnel service that enables secure HTTP tunnelin
 | Connection Management | ✅ Working | Tracks active tunnels |
 | Health Endpoint | ✅ Working | `/health` returns status |
 | Rate Limiting | ✅ Working | Per-key rate limits |
-| Metering Service | ⚠️ Partial | Runs but DB sync failing |
+| Metering Service | ✅ Working | Periodic sync + finalization |
 
 ### 3. Shared Package (@liveport/shared)
 
@@ -111,22 +111,28 @@ curl -X POST https://liveport-private-dashboard.vercel.app/api/keys \
 
 #### 1. DNS Configuration (liveport.online)
 
-**Status**: Not configured  
-**Priority**: Critical  
+**Status**: Not configured
+**Priority**: Critical
 **Effort**: 1-2 hours
 
 The tunnel server assigns subdomains like `crude-bass-mppx.liveport.online`, but DNS isn't configured to route these to the tunnel server.
 
 **Required**:
 - Configure wildcard DNS: `*.liveport.online` → Fly.io tunnel server
-- Configure root domain: `liveport.online` → Vercel dashboard (or landing page)
-- Set up SSL certificates via Cloudflare or Fly.io
+- Configure root domain: `liveport.online` → Redirect to liveport.dev (optional)
+- Set up SSL certificates via Cloudflare
 
-**Steps**:
-1. Add `liveport.online` to Cloudflare (or your DNS provider)
-2. Create A/AAAA records pointing to Fly.io IPs
-3. Create CNAME for `*.liveport.online` → `liveport-tunnel.fly.dev`
-4. Enable SSL/TLS (Full or Full Strict mode)
+**Quick Setup** (Cloudflare):
+1. Add `liveport.online` to Cloudflare
+2. Update nameservers at your registrar
+3. Create CNAME record:
+   - **Name**: `*` (wildcard)
+   - **Target**: `liveport-tunnel.fly.dev`
+   - **Proxy status**: Proxied (orange cloud)
+4. Enable SSL/TLS Full (strict) mode
+5. Enable "Always Use HTTPS"
+
+**Full Guide**: See `docs/deployment/cloudflare-setup.md` for detailed instructions including security configuration, WAF rules, and production checklist.
 
 #### 2. CLI Application
 
@@ -169,33 +175,39 @@ liveport connect 3000 --key lpk_...
 
 #### 3. HTTP Proxying in Tunnel Server
 
-**Status**: Partially implemented  
-**Priority**: Critical  
-**Effort**: 1 day
+**Status**: ✅ Complete (pending DNS for end-to-end test)
+**Priority**: Critical
+**Effort**: Completed
 
-The tunnel server accepts WebSocket connections and assigns subdomains, but the HTTP proxying logic (forwarding requests to the CLI client) needs verification.
+The HTTP proxying implementation is complete:
 
-**Required**:
-- Verify `http-handler.ts` correctly forwards requests to CLI
-- Test request/response proxying end-to-end
-- Handle WebSocket upgrade requests for tunneled WebSocket connections
+**Tunnel Server** (`apps/tunnel-server/src/http-handler.ts`):
+- Extracts subdomain from request host
+- Finds active tunnel connection by subdomain
+- Sends `http_request` message via WebSocket to CLI
+- Waits for `http_response` and returns to caller
+- Handles body size limits (10MB max)
+- Tracks request count and bytes transferred for metering
+
+**CLI Client** (`packages/cli/src/tunnel-client.ts`):
+- Receives `http_request` message from server
+- Makes HTTP request to local server (localhost:port)
+- Sends `http_response` back with status, headers, base64-encoded body
+
+**Not Yet Implemented**:
+- WebSocket upgrade requests (for tunneled WebSocket connections)
 
 ### High Priority
 
 #### 4. Metering Database Sync
 
-**Status**: Running but failing  
-**Priority**: High  
-**Effort**: 2-4 hours
+**Status**: ✅ Fixed
+**Priority**: High
+**Effort**: Completed
 
-The metering service is running but SQL queries are failing with `QUERY_EXECUTION_FAILED`.
-
-**Issue**: The `tunnels` table schema may not match the INSERT/UPSERT queries.
-
-**Fix**:
-1. Verify `tunnels` table exists with correct columns
-2. Check column types match query parameters
-3. Test metering queries directly against mech-storage
+The metering service had two issues that have been resolved:
+1. **Query referenced non-existent column**: The UPSERT query referenced `updated_at` column which doesn't exist in the tunnels table schema. Removed this reference.
+2. **Wrong default domain**: The default BASE_DOMAIN was `liveport.dev` but tunnel subdomains should use `liveport.online`. Updated all defaults in tunnel server.
 
 #### 5. Stripe Billing Integration
 
@@ -385,7 +397,7 @@ pnpm exec playwright test
 
 ## Known Issues
 
-1. **Metering DB Sync Failing**: SQL queries returning 500 errors. Need to verify table schema.
+1. ~~**Metering DB Sync Failing**~~: ✅ Fixed - Removed reference to non-existent `updated_at` column and corrected default domain.
 
 2. **Playwright + React Controlled Inputs**: The MCP browser tool doesn't properly trigger React's onChange events. Use Playwright directly for E2E tests.
 
@@ -397,7 +409,7 @@ pnpm exec playwright test
 
 1. **Configure DNS** - Required for tunnels to be accessible
 2. ~~**Create CLI**~~ ✅ Complete - `packages/cli/`
-3. **Fix Metering** - Required for accurate billing
+3. ~~**Fix Metering**~~ ✅ Fixed - Query and domain issues resolved
 4. **Test HTTP Proxying** - Verify full tunnel flow works
 5. **Implement Stripe** - Enable monetization
 6. **Create Agent SDK** - Enable AI agent use cases
