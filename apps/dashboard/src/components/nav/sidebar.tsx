@@ -8,7 +8,7 @@ import { useSession, signOut } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: Home },
+  { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/keys", label: "Bridge Keys", icon: Key },
   { href: "/tunnels", label: "Tunnels", icon: Radio },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -28,7 +28,7 @@ export function Sidebar() {
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-border bg-background">
       <div className="flex h-16 items-center border-b border-border px-6">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/dashboard" className="flex items-center gap-2">
           <Radio className="h-6 w-6 text-primary" />
           <span className="text-xl font-bold font-mono uppercase tracking-tighter">LIVE<span className="text-primary">PORT</span>_</span>
         </Link>

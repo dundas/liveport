@@ -12,7 +12,10 @@ import { createHttpHandler } from "./http-handler";
 import { handleConnection } from "./websocket-handler";
 import { getConnectionManager } from "./connection-manager";
 import { startMetering, stopMetering, syncMetrics } from "./metering";
+import { initializeSchema, getDatabase, createLogger } from "@liveport/shared";
 import type { TunnelServerConfig } from "./types";
+
+const logger = createLogger({ service: "tunnel-server" });
 
 // Default configuration
 const defaultConfig: TunnelServerConfig = {
@@ -32,12 +35,24 @@ const defaultConfig: TunnelServerConfig = {
 /**
  * Start the tunnel server
  */
-export function startServer(config: Partial<TunnelServerConfig> = {}): void {
+export async function startServer(config: Partial<TunnelServerConfig> = {}): Promise<void> {
   const cfg = { ...defaultConfig, ...config };
 
   console.log("=".repeat(50));
   console.log("LivePort Tunnel Server");
   console.log("=".repeat(50));
+  
+  // Initialize database schema
+  try {
+    console.log("Initializing database schema...");
+    const db = getDatabase();
+    const schemaResult = await initializeSchema(db);
+    console.log("Schema initialization complete:", schemaResult);
+  } catch (err) {
+    console.error("Failed to initialize database schema:", err);
+    process.exit(1);
+  }
+
   console.log(`Port: ${cfg.port}`);
   console.log(`Host: ${cfg.host}`);
   console.log(`Base Domain: ${cfg.baseDomain}`);
@@ -103,8 +118,9 @@ export function startServer(config: Partial<TunnelServerConfig> = {}): void {
   console.log(`WebSocket server listening on ws://${cfg.host}:${cfg.port}/connect`);
 
   // Start metering service
+  const meteringInterval = parseInt(process.env.METERING_SYNC_INTERVAL_MS || "30000", 10);
   startMetering({
-    syncIntervalMs: 60000, // Sync every 60 seconds
+    syncIntervalMs: meteringInterval,
     enabled: process.env.METERING_ENABLED !== "false",
   });
 
@@ -161,7 +177,10 @@ export function startServer(config: Partial<TunnelServerConfig> = {}): void {
 // Start server if running directly (ESM compatible)
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
-  startServer();
+  startServer().catch(err => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+  });
 }
 
 // Export for testing

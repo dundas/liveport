@@ -40,7 +40,7 @@ export default function SignupPage() {
       if (result.error) {
         setError(result.error.message || "Failed to create account");
       } else {
-        router.push("/");
+        router.push("/dashboard");
         router.refresh();
       }
     } catch (err) {
@@ -55,7 +55,7 @@ export default function SignupPage() {
     try {
       await signIn.social({
         provider: "github",
-        callbackURL: "/",
+        callbackURL: "/dashboard",
       });
     } catch (err) {
       setError("Failed to sign in with GitHub");
