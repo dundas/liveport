@@ -10,8 +10,8 @@ import { logger } from "../logger";
 import { getConfigValue } from "../config";
 import type { ConnectOptions } from "../types";
 
-// Default server URL (production tunnel server on Fly.io)
-const DEFAULT_SERVER_URL = "https://liveport-tunnel.fly.dev";
+// Default server URL (production tunnel server)
+const DEFAULT_SERVER_URL = "https://tunnel.liveport.dev";
 
 // Active client reference for graceful shutdown
 let activeClient: TunnelClient | null = null;

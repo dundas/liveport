@@ -58,8 +58,8 @@ Manage CLI configuration.
 # Set default bridge key
 liveport config set key bk_abc123
 
-# Set default server (optional - defaults to liveport-tunnel.fly.dev)
-liveport config set server https://liveport-tunnel.fly.dev
+# Set default server (optional - defaults to tunnel.liveport.dev)
+liveport config set server https://tunnel.liveport.dev
 
 # View config
 liveport config list
