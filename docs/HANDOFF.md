@@ -33,7 +33,7 @@ LivePort is an AI agent-focused tunnel service that enables secure HTTP tunnelin
 
 ### 2. Tunnel Server (Fly.io)
 
-**URL**: https://liveport-tunnel.fly.dev
+**URL**: https://tunnel.liveport.dev (also accessible via https://liveport-tunnel.fly.dev)
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -98,7 +98,7 @@ curl -X POST https://liveport-private-dashboard.vercel.app/api/keys \
 # Returns: {"key":"lpk_...", "id":"..."}
 
 # 3. Connect Tunnel (works)
-# WebSocket to wss://liveport-tunnel.fly.dev/connect
+# WebSocket to wss://tunnel.liveport.dev/connect
 # Headers: x-bridge-key: lpk_..., x-local-port: 3000
 # Returns: {"type":"connected","payload":{"subdomain":"crude-bass-mppx","url":"https://crude-bass-mppx.liveport.online"}}
 ```
@@ -125,8 +125,10 @@ Both domains are now fully configured and operational.
 **liveport.dev (Dashboard)**:
 - CNAME `liveport.dev` → `cname.vercel-dns.com`
 - CNAME `www.liveport.dev` → `cname.vercel-dns.com`
-- SSL: Let's Encrypt certificate via Vercel
+- CNAME `tunnel.liveport.dev` → `liveport-tunnel.fly.dev` (for CLI connections)
+- SSL: Let's Encrypt certificate via Vercel / Fly.io
 - Verified working: `https://liveport.dev` returns the dashboard
+- Verified working: `https://tunnel.liveport.dev/health` returns health status
 
 **Full Guide**: See `docs/deployment/cloudflare-setup.md` for security configuration, WAF rules, and production checklist.
 
@@ -416,8 +418,8 @@ pnpm exec playwright test
 ## Contacts & Resources
 
 - **Repository**: https://github.com/dundas/liveport-private
-- **Dashboard**: https://liveport-private-dashboard.vercel.app
-- **Tunnel Server**: https://liveport-tunnel.fly.dev
+- **Dashboard**: https://liveport.dev (or https://liveport-private-dashboard.vercel.app)
+- **Tunnel Server**: https://tunnel.liveport.dev (or https://liveport-tunnel.fly.dev)
 - **Fly.io Dashboard**: https://fly.io/apps/liveport-tunnel
 - **Vercel Dashboard**: (check Vercel account)
 
