@@ -38,15 +38,19 @@ export function loadConfig(): LivePortConfig {
  */
 export function saveConfig(config: LivePortConfig): void {
   try {
-    // Ensure config directory exists
+    // Ensure config directory exists with restricted permissions
     if (!fs.existsSync(CONFIG_DIR)) {
       fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
     }
+    // Explicitly set permissions to override umask (stores sensitive bridge keys)
+    fs.chmodSync(CONFIG_DIR, 0o700);
 
     // Write config file with restricted permissions
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
       mode: 0o600,
     });
+    // Explicitly set file permissions to override umask
+    fs.chmodSync(CONFIG_FILE, 0o600);
   } catch (error) {
     const err = error as Error;
     throw new Error(`Failed to save config: ${err.message}`);

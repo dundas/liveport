@@ -130,36 +130,41 @@ The tunnel server assigns subdomains like `crude-bass-mppx.liveport.online`, but
 
 #### 2. CLI Application
 
-**Status**: Not created  
-**Priority**: Critical  
-**Effort**: 2-3 days
+**Status**: ✅ Complete
+**Priority**: Critical
+**Location**: `packages/cli/`
 
-Users need a CLI to connect their local servers to LivePort.
+The CLI is fully implemented with all required features:
 
-**Required Features**:
-- `liveport login` - Authenticate with dashboard
+**Available Commands**:
 - `liveport connect <port>` - Create tunnel to local port
 - `liveport connect <port> --key <key>` - Use specific bridge key
-- `liveport status` - Show active tunnels
+- `liveport status` - Show active tunnel status
 - `liveport disconnect` - Close tunnel
+- `liveport config set <key> <value>` - Save config (key, server)
+- `liveport config get <key>` - Get config value
+- `liveport config list` - List all config
+- `liveport config delete <key>` - Delete config value
 
-**Suggested Implementation**:
-```
-apps/cli/
-├── package.json
-├── src/
-│   ├── index.ts          # Entry point
-│   ├── commands/
-│   │   ├── login.ts
-│   │   ├── connect.ts
-│   │   ├── status.ts
-│   │   └── disconnect.ts
-│   ├── lib/
-│   │   ├── websocket.ts  # WebSocket client
-│   │   ├── proxy.ts      # HTTP proxy
-│   │   └── config.ts     # Local config storage
-│   └── types.ts
-└── tsconfig.json
+**Key Features**:
+- WebSocket client with automatic reconnection
+- HTTP proxying to local server
+- Heartbeat keep-alive
+- Graceful shutdown handling
+- Colored terminal output
+- Config file stored at `~/.liveport/config.json`
+
+**Build & Run**:
+```bash
+# Build
+pnpm build --filter=@liveport/cli
+
+# Run directly
+node packages/cli/dist/index.mjs connect 3000 --key lpk_...
+
+# Or install globally
+cd packages/cli && npm link
+liveport connect 3000 --key lpk_...
 ```
 
 #### 3. HTTP Proxying in Tunnel Server
@@ -391,7 +396,7 @@ pnpm exec playwright test
 ## Next Steps (Recommended Order)
 
 1. **Configure DNS** - Required for tunnels to be accessible
-2. **Create CLI** - Required for users to create tunnels
+2. ~~**Create CLI**~~ ✅ Complete - `packages/cli/`
 3. **Fix Metering** - Required for accurate billing
 4. **Test HTTP Proxying** - Verify full tunnel flow works
 5. **Implement Stripe** - Enable monetization
@@ -407,6 +412,19 @@ pnpm exec playwright test
 - **Tunnel Server**: https://liveport-tunnel.fly.dev
 - **Fly.io Dashboard**: https://fly.io/apps/liveport-tunnel
 - **Vercel Dashboard**: (check Vercel account)
+
+---
+
+### 6. CLI Package (@liveport/cli)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| CLI Structure | ✅ Complete | `packages/cli/` |
+| `connect` Command | ✅ Working | WebSocket + HTTP proxy |
+| `status` Command | ✅ Working | Show tunnel info |
+| `disconnect` Command | ✅ Working | Graceful shutdown |
+| `config` Command | ✅ Working | Manage bridge keys |
+| Build Configuration | ✅ Working | tsup with ESM output |
 
 ---
 

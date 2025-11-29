@@ -58,8 +58,8 @@ Manage CLI configuration.
 # Set default bridge key
 liveport config set key bk_abc123
 
-# Set default server
-liveport config set server https://tunnel.liveport.dev
+# Set default server (optional - defaults to liveport-tunnel.fly.dev)
+liveport config set server https://liveport-tunnel.fly.dev
 
 # View config
 liveport config list
@@ -74,12 +74,12 @@ liveport config delete key
 ## Environment Variables
 
 - `LIVEPORT_KEY` - Default bridge key
-- `LIVEPORT_SERVER` - Default tunnel server URL
+- `LIVEPORT_SERVER_URL` - Default tunnel server URL
 
 ## How It Works
 
 1. Run `liveport connect <port>` to establish a WebSocket connection to the LivePort tunnel server
-2. The server assigns a unique subdomain (e.g., `abc123.tunnel.liveport.dev`)
+2. The server assigns a unique subdomain (e.g., `abc123.liveport.online`)
 3. Incoming requests to that URL are proxied through the tunnel to your local port
 4. AI agents can discover your tunnel using the `@liveport/agent-sdk`
 

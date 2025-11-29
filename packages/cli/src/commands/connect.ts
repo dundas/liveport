@@ -10,11 +10,23 @@ import { logger } from "../logger";
 import { getConfigValue } from "../config";
 import type { ConnectOptions } from "../types";
 
-// Default server URL
-const DEFAULT_SERVER_URL = "https://tunnel.liveport.dev";
+// Default server URL (production tunnel server on Fly.io)
+const DEFAULT_SERVER_URL = "https://liveport-tunnel.fly.dev";
 
 // Active client reference for graceful shutdown
 let activeClient: TunnelClient | null = null;
+
+/**
+ * Log an error with optional error code prefix
+ */
+function logError(error: Error & { code?: string }, prefix?: string): void {
+  const message = prefix ? `${prefix}: ${error.message}` : error.message;
+  if (error.code) {
+    logger.error(`${error.code}: ${message}`);
+  } else {
+    logger.error(message);
+  }
+}
 
 /**
  * Execute the connect command
@@ -83,12 +95,7 @@ export async function connectCommand(
 
   client.on("error", (error) => {
     spinner.stop();
-    const errorWithCode = error as Error & { code?: string };
-    if (errorWithCode.code) {
-      logger.error(`${errorWithCode.code}: ${error.message}`);
-    } else {
-      logger.error(error.message);
-    }
+    logError(error as Error & { code?: string });
   });
 
   client.on("request", (method, path) => {
@@ -103,12 +110,7 @@ export async function connectCommand(
     await client.connect();
   } catch (error) {
     spinner.stop();
-    const err = error as Error & { code?: string };
-    if (err.code) {
-      logger.error(`${err.code}: ${err.message}`);
-    } else {
-      logger.error(`Connection failed: ${err.message}`);
-    }
+    logError(error as Error & { code?: string }, "Connection failed");
     process.exit(1);
   }
 }

@@ -29,6 +29,7 @@ export class TunnelClient {
   private state: ConnectionState = "disconnected";
   private tunnelInfo: TunnelInfo | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
   private requestCount = 0;
   private shouldReconnect = true;
@@ -128,7 +129,10 @@ export class TunnelClient {
           const message = JSON.parse(data.toString()) as Message;
           this.handleMessage(message, resolve, reject, connectTimeout);
         } catch (err) {
-          // Ignore parse errors
+          // Log parse errors at debug level - malformed messages from server
+          if (process.env.DEBUG) {
+            console.error("[tunnel-client] Failed to parse message:", err);
+          }
         }
       });
 
@@ -153,6 +157,7 @@ export class TunnelClient {
   disconnect(reason: string = "Client disconnect"): void {
     this.shouldReconnect = false;
     this.stopHeartbeat();
+    this.stopReconnectTimer();
 
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       // Send disconnect message
@@ -280,13 +285,29 @@ export class TunnelClient {
     // Exponential backoff
     const delay = this.config.reconnectBaseDelay * Math.pow(2, this.reconnectAttempts - 1);
 
-    setTimeout(async () => {
+    // Store timer reference so we can cancel if disconnect() is called
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      // Check if disconnect was called during the delay
+      if (!this.shouldReconnect) {
+        return;
+      }
       try {
         await this.connect();
       } catch {
         // Will trigger handleClose which will retry
       }
     }, delay);
+  }
+
+  /**
+   * Stop reconnect timer
+   */
+  private stopReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 
   /**
