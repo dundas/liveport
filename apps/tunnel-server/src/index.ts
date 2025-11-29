@@ -12,7 +12,8 @@ import { createHttpHandler } from "./http-handler";
 import { handleConnection } from "./websocket-handler";
 import { getConnectionManager } from "./connection-manager";
 import { startMetering, stopMetering, syncMetrics } from "./metering";
-import { initializeSchema, getDatabase, createLogger } from "@liveport/shared";
+import { initializeSchema, getDatabase } from "@liveport/shared";
+import { createLogger } from "@liveport/shared/logging";
 import type { TunnelServerConfig } from "./types";
 
 const logger = createLogger({ service: "tunnel-server" });
