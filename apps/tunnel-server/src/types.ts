@@ -25,7 +25,7 @@ export interface ConnectedPayload {
   tunnelId: string;
   subdomain: string;
   url: string;
-  expiresAt: string;
+  expiresAt: string | null;
 }
 
 export interface ConnectedMessage extends BaseMessage {
@@ -125,7 +125,7 @@ export interface TunnelConnection {
   lastHeartbeat: Date;
   requestCount: number;
   bytesTransferred: number; // Track total bytes for metering
-  expiresAt: Date;
+  expiresAt: Date | null; // null means never expires
 }
 
 // Pending request resolver

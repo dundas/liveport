@@ -225,7 +225,7 @@ export async function handleConnection(
       tunnelId,
       subdomain,
       url,
-      expiresAt: validation.expiresAt!.toISOString(),
+      expiresAt: validation.expiresAt?.toISOString() || null,
     },
   };
   send(socket, connectedMessage);

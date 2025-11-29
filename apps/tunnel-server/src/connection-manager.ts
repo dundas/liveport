@@ -35,7 +35,7 @@ export class ConnectionManager {
     keyId: string,
     userId: string,
     localPort: number,
-    expiresAt: Date
+    expiresAt: Date | null
   ): string | null {
     // Get existing subdomains to check for collisions
     const existingSubdomains = new Set(this.tunnelsBySubdomain.keys());
@@ -277,7 +277,7 @@ export class ConnectionManager {
     lastHeartbeat: string;
     requestCount: number;
     bytesTransferred: number;
-    expiresAt: string;
+    expiresAt: string | null;
   }> {
     return Array.from(this.tunnelsBySubdomain.values()).map((conn) => ({
       id: conn.id,
@@ -290,7 +290,7 @@ export class ConnectionManager {
       lastHeartbeat: conn.lastHeartbeat.toISOString(),
       requestCount: conn.requestCount,
       bytesTransferred: conn.bytesTransferred,
-      expiresAt: conn.expiresAt.toISOString(),
+      expiresAt: conn.expiresAt?.toISOString() || null,
     }));
   }
 }

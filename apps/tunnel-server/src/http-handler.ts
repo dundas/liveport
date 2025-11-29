@@ -123,7 +123,7 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
         localPort: t.localPort,
         state: t.state,
         createdAt: t.createdAt.toISOString(),
-        expiresAt: t.expiresAt.toISOString(),
+        expiresAt: t.expiresAt?.toISOString() || null,
         requestCount: t.requestCount,
       })),
     });
