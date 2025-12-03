@@ -8,14 +8,14 @@ import { getStripe, PRICE_IDS, PRICING, isStripeConfigured } from "./stripe";
 import { getDbClient } from "./db";
 import type Stripe from "stripe";
 
-// User billing fields interface
+// User billing fields interface (matches database snake_case columns)
 export interface UserBillingInfo {
   id: string;
   email: string;
   name?: string;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
-  subscriptionStatus?: string;
+  stripe_customer_id?: string;
+  stripe_subscription_id?: string;
+  subscription_status?: string;
 }
 
 // Usage report interface
@@ -41,8 +41,8 @@ export async function getOrCreateStripeCustomer(
 
   // Check if user already has a Stripe customer ID
   const user = await db.getRecord<UserBillingInfo>("user", userId);
-  if (user?.stripeCustomerId) {
-    return user.stripeCustomerId;
+  if (user?.stripe_customer_id) {
+    return user.stripe_customer_id;
   }
 
   // Create new Stripe customer
@@ -56,7 +56,7 @@ export async function getOrCreateStripeCustomer(
 
   // Store customer ID in database
   await db.update("user", userId, {
-    stripeCustomerId: customer.id,
+    stripe_customer_id: customer.id,
   });
 
   return customer.id;
@@ -82,7 +82,7 @@ export async function createSubscription(
 
   // Check if user already has an active subscription
   const user = await db.getRecord<UserBillingInfo>("user", userId);
-  if (user?.stripeSubscriptionId && user.subscriptionStatus === "active") {
+  if (user?.stripe_subscription_id && user.subscription_status === "active") {
     throw new Error("User already has an active subscription");
   }
 
@@ -115,8 +115,8 @@ export async function createSubscription(
 
   // Store subscription ID
   await db.update("user", userId, {
-    stripeSubscriptionId: subscription.id,
-    subscriptionStatus: subscription.status,
+    stripe_subscription_id: subscription.id,
+    subscription_status: subscription.status,
   });
 
   // Get client secret for payment
@@ -162,7 +162,7 @@ export async function cancelSubscription(
   const db = getDbClient();
 
   const user = await db.getRecord<UserBillingInfo>("user", userId);
-  if (!user?.stripeSubscriptionId) {
+  if (!user?.stripe_subscription_id) {
     throw new Error("User has no active subscription");
   }
 
@@ -170,17 +170,17 @@ export async function cancelSubscription(
 
   if (immediately) {
     // Cancel immediately
-    subscription = await stripe.subscriptions.cancel(user.stripeSubscriptionId);
+    subscription = await stripe.subscriptions.cancel(user.stripe_subscription_id);
   } else {
     // Cancel at end of billing period
-    subscription = await stripe.subscriptions.update(user.stripeSubscriptionId, {
+    subscription = await stripe.subscriptions.update(user.stripe_subscription_id, {
       cancel_at_period_end: true,
     });
   }
 
   // Update database
   await db.update("user", userId, {
-    subscriptionStatus: subscription.status,
+    subscription_status: subscription.status,
   });
 
   return {
@@ -199,16 +199,16 @@ export async function resumeSubscription(userId: string): Promise<{
   const db = getDbClient();
 
   const user = await db.getRecord<UserBillingInfo>("user", userId);
-  if (!user?.stripeSubscriptionId) {
+  if (!user?.stripe_subscription_id) {
     throw new Error("User has no subscription");
   }
 
-  const subscription = await stripe.subscriptions.update(user.stripeSubscriptionId, {
+  const subscription = await stripe.subscriptions.update(user.stripe_subscription_id, {
     cancel_at_period_end: false,
   });
 
   await db.update("user", userId, {
-    subscriptionStatus: subscription.status,
+    subscription_status: subscription.status,
   });
 
   return {
@@ -234,7 +234,7 @@ export async function getSubscriptionStatus(userId: string): Promise<{
   const db = getDbClient();
 
   const user = await db.getRecord<UserBillingInfo>("user", userId);
-  if (!user?.stripeSubscriptionId) {
+  if (!user?.stripe_subscription_id) {
     return {
       hasSubscription: false,
       status: null,
@@ -246,7 +246,7 @@ export async function getSubscriptionStatus(userId: string): Promise<{
 
   try {
     const subscription = await stripe.subscriptions.retrieve(
-      user.stripeSubscriptionId,
+      user.stripe_subscription_id,
       { expand: ["items"] }
     );
     
@@ -286,12 +286,12 @@ export async function createBillingPortalSession(
   const db = getDbClient();
 
   const user = await db.getRecord<UserBillingInfo>("user", userId);
-  if (!user?.stripeCustomerId) {
+  if (!user?.stripe_customer_id) {
     throw new Error("User has no Stripe customer ID");
   }
 
   const session = await stripe.billingPortal.sessions.create({
-    customer: user.stripeCustomerId,
+    customer: user.stripe_customer_id,
     return_url: returnUrl,
   });
 
@@ -350,13 +350,13 @@ export async function reportUsageToStripe(
   const db = getDbClient();
 
   const user = await db.getRecord<UserBillingInfo>("user", userId);
-  if (!user?.stripeSubscriptionId) {
+  if (!user?.stripe_subscription_id) {
     throw new Error("User has no active subscription");
   }
 
   // Get subscription items
   const subscription = await stripe.subscriptions.retrieve(
-    user.stripeSubscriptionId,
+    user.stripe_subscription_id,
     { expand: ["items"] }
   );
 
@@ -378,7 +378,7 @@ export async function reportUsageToStripe(
       await stripe.billing.meterEvents.create({
         event_name: 'tunnel_seconds',
         payload: {
-          stripe_customer_id: user.stripeCustomerId!,
+          stripe_customer_id: user.stripe_customer_id!,
           value: String(blocks),
         },
       });
@@ -395,7 +395,7 @@ export async function reportUsageToStripe(
       await stripe.billing.meterEvents.create({
         event_name: 'bandwidth_gb',
         payload: {
-          stripe_customer_id: user.stripeCustomerId!,
+          stripe_customer_id: user.stripe_customer_id!,
           value: String(Math.round(usage.bandwidthGB * 100)),
         },
       });
@@ -435,12 +435,12 @@ export async function getInvoices(
   const db = getDbClient();
 
   const user = await db.getRecord<UserBillingInfo>("user", userId);
-  if (!user?.stripeCustomerId) {
+  if (!user?.stripe_customer_id) {
     return [];
   }
 
   const invoices = await stripe.invoices.list({
-    customer: user.stripeCustomerId,
+    customer: user.stripe_customer_id,
     limit,
   });
 
