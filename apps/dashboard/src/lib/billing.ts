@@ -4,7 +4,7 @@
  * Handles Stripe subscription management, usage reporting, and billing operations.
  */
 
-import { getStripe, PRICE_IDS, isStripeConfigured } from "./stripe";
+import { getStripe, PRICE_IDS, PRICING, isStripeConfigured } from "./stripe";
 import { getDbClient } from "./db";
 import type Stripe from "stripe";
 
@@ -368,13 +368,13 @@ export async function reportUsageToStripe(
     (item) => item.price.id === PRICE_IDS.bandwidth
   );
 
+  const errors: Error[] = [];
+
   // Report tunnel usage (in 1000-second blocks for Stripe)
   // Note: In Stripe SDK v20+, usage records are created via billing.meterEvents
-  // For now, we'll use the meter events API if available, otherwise log
   if (tunnelSecondsItem && usage.tunnelSeconds > 0) {
-    const blocks = Math.ceil(usage.tunnelSeconds / 1000);
+    const blocks = Math.ceil(usage.tunnelSeconds / PRICING.tunnelSecondsBlockSize);
     try {
-      // Try the v2 billing meter events API
       await stripe.billing.meterEvents.create({
         event_name: 'tunnel_seconds',
         payload: {
@@ -382,9 +382,10 @@ export async function reportUsageToStripe(
           value: String(blocks),
         },
       });
-    } catch {
-      // Fallback: log for manual reporting
-      console.log(`[Billing] Usage record (tunnel): ${blocks} blocks for subscription item ${tunnelSecondsItem.id}`);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(`[Billing] FAILED to report tunnel usage for user ${userId}:`, error.message);
+      errors.push(error);
     }
   }
 
@@ -398,9 +399,17 @@ export async function reportUsageToStripe(
           value: String(Math.round(usage.bandwidthGB * 100)),
         },
       });
-    } catch {
-      console.log(`[Billing] Usage record (bandwidth): ${usage.bandwidthGB.toFixed(2)} GB for subscription item ${bandwidthItem.id}`);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(`[Billing] FAILED to report bandwidth usage for user ${userId}:`, error.message);
+      errors.push(error);
     }
+  }
+
+  // Log any errors for alerting/monitoring
+  if (errors.length > 0) {
+    console.error(`[Billing] Usage reporting had ${errors.length} error(s) for user ${userId}`);
+    // In production, send to error tracking (Sentry, etc.)
   }
 
   console.log(`[Billing] Reported usage for user ${userId}:`, {

@@ -51,6 +51,30 @@ export async function POST(req: Request) {
 
   const db = getDbClient();
 
+  // Check for duplicate events (idempotency)
+  // Store processed event IDs in database to prevent reprocessing
+  try {
+    const existing = await db.query(
+      `SELECT 1 FROM stripe_webhook_events WHERE event_id = $1`,
+      [event.id]
+    ).catch(() => ({ rows: [] })); // Table may not exist yet
+    
+    if (existing.rows.length > 0) {
+      console.log(`[Stripe Webhook] Duplicate event ${event.id}, skipping`);
+      return NextResponse.json({ received: true, duplicate: true });
+    }
+    
+    // Record this event (best effort - table may not exist)
+    await db.query(
+      `INSERT INTO stripe_webhook_events (event_id, event_type, processed_at) 
+       VALUES ($1, $2, NOW()) 
+       ON CONFLICT (event_id) DO NOTHING`,
+      [event.id, event.type]
+    ).catch(() => {}); // Ignore if table doesn't exist
+  } catch {
+    // Continue processing even if dedup check fails
+  }
+
   try {
     switch (event.type) {
       case "customer.subscription.created":
