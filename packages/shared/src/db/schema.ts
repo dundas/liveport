@@ -380,6 +380,20 @@ export async function createAuthTables(db: MechStorageClient): Promise<void> {
 }
 
 /**
+ * Create Stripe webhook events table for idempotency
+ */
+export async function createStripeWebhookEventsTable(db: MechStorageClient): Promise<void> {
+  await db.query(STRIPE_WEBHOOK_EVENTS_SCHEMA_SQL);
+}
+
+/**
+ * Run billing migration to add Stripe columns to user table
+ */
+export async function runBillingMigration(db: MechStorageClient): Promise<void> {
+  await db.query(USER_BILLING_MIGRATION_SQL);
+}
+
+/**
  * Create all tables in the correct order (respecting foreign key dependencies)
  */
 export async function createAllTables(db: MechStorageClient): Promise<void> {
@@ -389,6 +403,8 @@ export async function createAllTables(db: MechStorageClient): Promise<void> {
   await createBridgeKeysTable(db);
   await createTunnelsTable(db);
   await createStaticSubdomainsTable(db);
+  // Create billing tables
+  await createStripeWebhookEventsTable(db);
 }
 
 /**

@@ -119,25 +119,17 @@ export async function createSubscription(
     subscription_status: subscription.status,
   });
 
-  // Get client secret for payment
-  // In Stripe SDK v20+, payment_intent is accessed via invoice.payments[].payment.payment_intent
+  // Get client secret for payment confirmation
+  // In Stripe SDK v20+, client_secret is in confirmation_secret
   let clientSecret: string | null = null;
   const invoice = subscription.latest_invoice;
   
-  if (invoice && typeof invoice === 'object' && 'payments' in invoice) {
+  if (invoice && typeof invoice === 'object') {
     const invoiceObj = invoice as Stripe.Invoice;
-    const payments = invoiceObj.payments?.data;
-    if (payments && payments.length > 0) {
-      const invoicePayment = payments[0];
-      const paymentIntentRef = invoicePayment.payment?.payment_intent;
-      if (paymentIntentRef) {
-        if (typeof paymentIntentRef === 'string') {
-          const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentRef);
-          clientSecret = paymentIntent.client_secret;
-        } else {
-          clientSecret = paymentIntentRef.client_secret;
-        }
-      }
+    
+    // Get client_secret from confirmation_secret (Stripe SDK v20+)
+    if (invoiceObj.confirmation_secret?.client_secret) {
+      clientSecret = invoiceObj.confirmation_secret.client_secret;
     }
   }
 
@@ -263,8 +255,11 @@ export async function getSubscriptionStatus(userId: string): Promise<{
       currentPeriodEnd,
       cancelAt: subscription.cancel_at ? new Date(subscription.cancel_at * 1000) : null,
     };
-  } catch {
-    // Subscription may have been deleted
+  } catch (err) {
+    // Subscription may have been deleted or Stripe error
+    console.error(`[Billing] Error fetching subscription for user ${userId}:`, 
+      err instanceof Error ? err.message : err
+    );
     return {
       hasSubscription: false,
       status: null,
