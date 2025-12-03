@@ -295,6 +295,7 @@ export async function createBillingPortalSession(
 
 /**
  * Calculate usage for a billing period
+ * Only counts completed tunnels to avoid double-counting active tunnels
  */
 export async function calculateUsage(
   userId: string,
@@ -303,20 +304,31 @@ export async function calculateUsage(
 ): Promise<UsageReport> {
   const db = getDbClient();
 
-  // Query tunnels for this user in the billing period
+  // Validate date parameters
+  if (!(startDate instanceof Date) || !(endDate instanceof Date)) {
+    throw new Error("Invalid date parameters");
+  }
+  if (startDate >= endDate) {
+    throw new Error("Start date must be before end date");
+  }
+
+  // Query completed tunnels for this user in the billing period
+  // Only count tunnels that have disconnected to avoid double-counting
   const result = await db.query<{
     total_seconds: string;
     total_bytes: string;
     tunnel_count: string;
   }>(`
     SELECT 
-      COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(disconnected_at, NOW()) - connected_at))), 0) as total_seconds,
+      COALESCE(SUM(EXTRACT(EPOCH FROM (disconnected_at - connected_at))), 0) as total_seconds,
       COALESCE(SUM(bytes_transferred), 0) as total_bytes,
       COUNT(*) as tunnel_count
     FROM tunnels
     WHERE user_id = $1
       AND connected_at >= $2
       AND connected_at < $3
+      AND disconnected_at IS NOT NULL
+      AND disconnected_at <= $3
   `, [userId, startDate.toISOString(), endDate.toISOString()]);
 
   const row = result.rows[0];
