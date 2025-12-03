@@ -51,9 +51,21 @@ CREATE TABLE IF NOT EXISTS "user" (
   email TEXT UNIQUE NOT NULL,
   email_verified BOOLEAN DEFAULT FALSE,
   image TEXT,
+  stripe_customer_id TEXT,
+  stripe_subscription_id TEXT,
+  subscription_status TEXT,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
+`.trim();
+
+/**
+ * Migration SQL to add Stripe billing columns to existing user table
+ */
+export const USER_BILLING_MIGRATION_SQL = `
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS subscription_status TEXT;
 `.trim();
 
 /**
@@ -172,6 +184,20 @@ CREATE TABLE IF NOT EXISTS static_subdomains (
 `.trim();
 
 /**
+ * SQL Schema for Stripe Webhook Events table (for idempotency)
+ */
+export const STRIPE_WEBHOOK_EVENTS_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+  event_id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  processed_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Clean up old events after 7 days (run via cron)
+-- DELETE FROM stripe_webhook_events WHERE processed_at < NOW() - INTERVAL '7 days';
+`.trim();
+
+/**
  * Column definitions for Better Auth User table (mech-storage API format)
  */
 export const USER_COLUMNS: ColumnDefinition[] = [
@@ -180,6 +206,9 @@ export const USER_COLUMNS: ColumnDefinition[] = [
   { name: "email", type: "text", nullable: false, unique: true },
   { name: "email_verified", type: "boolean", nullable: true, defaultValue: "FALSE" },
   { name: "image", type: "text", nullable: true },
+  { name: "stripe_customer_id", type: "text", nullable: true },
+  { name: "stripe_subscription_id", type: "text", nullable: true },
+  { name: "subscription_status", type: "text", nullable: true },
   { name: "created_at", type: "timestamp", nullable: true, defaultValue: "NOW()" },
   { name: "updated_at", type: "timestamp", nullable: true, defaultValue: "NOW()" },
 ];
@@ -351,6 +380,20 @@ export async function createAuthTables(db: MechStorageClient): Promise<void> {
 }
 
 /**
+ * Create Stripe webhook events table for idempotency
+ */
+export async function createStripeWebhookEventsTable(db: MechStorageClient): Promise<void> {
+  await db.query(STRIPE_WEBHOOK_EVENTS_SCHEMA_SQL);
+}
+
+/**
+ * Run billing migration to add Stripe columns to user table
+ */
+export async function runBillingMigration(db: MechStorageClient): Promise<void> {
+  await db.query(USER_BILLING_MIGRATION_SQL);
+}
+
+/**
  * Create all tables in the correct order (respecting foreign key dependencies)
  */
 export async function createAllTables(db: MechStorageClient): Promise<void> {
@@ -360,6 +403,8 @@ export async function createAllTables(db: MechStorageClient): Promise<void> {
   await createBridgeKeysTable(db);
   await createTunnelsTable(db);
   await createStaticSubdomainsTable(db);
+  // Create billing tables
+  await createStripeWebhookEventsTable(db);
 }
 
 /**

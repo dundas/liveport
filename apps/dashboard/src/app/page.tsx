@@ -21,6 +21,7 @@ export default async function LandingPage() {
         </div>
         <nav className="hidden md:flex items-center gap-8 text-sm font-bold uppercase tracking-wider">
           <Link href="/docs" className="text-muted-foreground hover:text-primary transition-colors">Docs</Link>
+          <Link href="/pricing" className="text-muted-foreground hover:text-primary transition-colors">Pricing</Link>
           <Link href="/#features" className="text-muted-foreground hover:text-primary transition-colors">Features</Link>
           <Link href="https://github.com/dundas/liveport" target="_blank" className="text-muted-foreground hover:text-primary transition-colors">GitHub</Link>
         </nav>
