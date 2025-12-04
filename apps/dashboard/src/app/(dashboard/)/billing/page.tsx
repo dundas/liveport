@@ -71,7 +71,12 @@ export default function BillingPage() {
 
   // Mock data - replace with actual API calls
   const [balance, setBalance] = useState(50.00); // User's credit balance
-  const freeUsageRemaining = 5.00; // Monthly free tier
+  
+  // Free tier: 5 hours tunnel time + 1 GB bandwidth per month
+  // 5 hours * $0.018/hour = $0.09
+  // 1 GB * $0.05/GB = $0.05
+  // Total free tier value = $0.14
+  const freeUsageRemaining = 0.14; // Monthly free tier value
 
   const fetchData = useCallback(async () => {
     try {
@@ -197,7 +202,7 @@ export default function BillingPage() {
               <span className="text-4xl font-bold">{formatCurrency(freeUsageRemaining)}</span>
               <Badge variant="outline" className="ml-auto bg-green-500/10 text-green-700">Free</Badge>
             </div>
-            <p className="text-xs text-muted-foreground mt-3">Resets monthly on the 1st</p>
+            <p className="text-xs text-muted-foreground mt-3">5 hours + 1 GB (resets monthly)</p>
           </CardContent>
         </Card>
 
@@ -373,7 +378,8 @@ export default function BillingPage() {
             <div className="space-y-2 text-sm">
               <p className="font-semibold">How billing works</p>
               <ul className="space-y-1 text-muted-foreground list-disc list-inside">
-                <li>Each month you get ${freeUsageRemaining.toFixed(2)} in free usage</li>
+                <li>Each month you get <strong>5 hours</strong> tunnel time + <strong>1 GB</strong> bandwidth free</li>
+                <li>Free tier value: ${freeUsageRemaining.toFixed(2)} (5h × $0.018 + 1GB × $0.05)</li>
                 <li>Free usage deducts first, then your paid credits</li>
                 <li>Unused free tier does not roll over to next month</li>
                 <li>Add credits anytime to ensure uninterrupted service</li>
