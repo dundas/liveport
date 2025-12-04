@@ -17,7 +17,8 @@ export async function POST(req: Request) {
     );
   }
 
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  // Trim to handle any whitespace/newline issues in env vars
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
   if (!webhookSecret) {
     console.error("[Stripe Webhook] STRIPE_WEBHOOK_SECRET not configured");
     return NextResponse.json(
