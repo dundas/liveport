@@ -73,11 +73,24 @@ export async function GET(request: NextRequest) {
     // Flatten and return
     const tunnels = allTunnels.flat();
 
+    // Sanitize tunnel names to prevent XSS
+    const sanitizeName = (name: string | undefined): string | undefined => {
+      if (!name) return undefined;
+      // Remove any HTML/script tags and escape special characters
+      return name
+        .replace(/[<>]/g, "") // Remove angle brackets
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#x27;")
+        .replace(/\//g, "&#x2F;")
+        .substring(0, 100); // Ensure max length
+    };
+
     return NextResponse.json({
       tunnels: tunnels.map((t) => ({
         id: t.tunnelId,
         subdomain: t.subdomain,
-        name: t.name,
+        name: sanitizeName(t.name),
         localPort: t.localPort,
         state: t.state,
         connectedAt: t.createdAt,

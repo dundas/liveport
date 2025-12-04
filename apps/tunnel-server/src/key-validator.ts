@@ -256,22 +256,32 @@ export class KeyValidator {
 
     console.log(`[KeyValidator] Key validated: ${record.keyPrefix} (user: ${record.userId})`);
 
-    // Fetch user tier
-    let userTier = "free"; // Default to free tier
+    // Fetch user tier with error handling
+    let userTier: string | null = null;
     try {
       const user = await this.userRepo.findById(record.userId);
       if (user) {
         userTier = user.tier || "free";
+      } else {
+        // User not found - log warning but allow connection with free tier
+        console.warn(`[KeyValidator] User not found: ${record.userId}`);
+        userTier = "free";
       }
     } catch (e) {
-      console.warn(`[KeyValidator] Failed to fetch user tier for ${record.userId}:`, e);
+      // Database error - log error and fail the connection to prevent incorrect tier assignment
+      console.error(`[KeyValidator] Failed to fetch user tier for ${record.userId}:`, e);
+      return {
+        valid: false,
+        error: "Failed to verify user tier - please try again",
+        errorCode: "VALIDATION_ERROR",
+      };
     }
 
     return {
       valid: true,
       keyId: record.id,
       userId: record.userId,
-      userTier,
+      userTier: userTier || "free",
       expiresAt: record.expiresAt,
       maxUses: record.maxUses,
       currentUses: record.currentUses + 1,

@@ -93,7 +93,7 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
     // Extract headers
     const bridgeKey = request.headers["x-bridge-key"] as string;
     const localPort = parseInt(request.headers["x-local-port"] as string, 10);
-    const tunnelName = request.headers["x-tunnel-name"] as string | undefined;
+    let tunnelName = request.headers["x-tunnel-name"] as string | undefined;
 
     if (!bridgeKey) {
       console.log("[WS] Connection rejected: missing X-Bridge-Key header");
@@ -105,6 +105,33 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
       console.log("[WS] Connection rejected: missing or invalid X-Local-Port header");
       socket.close(4001, "Missing or invalid X-Local-Port header");
       return;
+    }
+
+    // Validate tunnel name if provided
+    if (tunnelName) {
+      // Trim whitespace
+      tunnelName = tunnelName.trim();
+      
+      // Check length (max 100 characters)
+      if (tunnelName.length > 100) {
+        console.log("[WS] Connection rejected: tunnel name exceeds 100 characters");
+        socket.close(1008, "Tunnel name exceeds 100 characters");
+        return;
+      }
+      
+      // Check for empty string after trim
+      if (tunnelName.length === 0) {
+        console.log("[WS] Connection rejected: tunnel name cannot be empty or whitespace-only");
+        socket.close(1008, "Tunnel name cannot be empty or whitespace-only");
+        return;
+      }
+      
+      // Basic sanitization: allow alphanumeric, spaces, hyphens, underscores, dots
+      if (!/^[a-zA-Z0-9\s\-_.]+$/.test(tunnelName)) {
+        console.log("[WS] Connection rejected: tunnel name contains invalid characters");
+        socket.close(1008, "Tunnel name can only contain letters, numbers, spaces, hyphens, underscores, and dots");
+        return;
+      }
     }
 
     // Handle the connection

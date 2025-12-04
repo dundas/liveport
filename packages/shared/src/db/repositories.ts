@@ -14,7 +14,7 @@ interface UserRow {
   id: string;
   email: string;
   name: string | null;
-  tier?: string;
+  tier: "free" | "pro" | "team" | "enterprise";
   email_verified?: boolean;
   image?: string;
   created_at: string;
