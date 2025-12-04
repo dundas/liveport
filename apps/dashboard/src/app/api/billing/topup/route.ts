@@ -35,8 +35,10 @@ export async function POST(request: Request) {
   }
 
   // Get the base URL from environment or request origin
+  // Trim to handle any whitespace/newline issues in env vars
   const url = new URL(request.url);
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${url.protocol}//${url.host}`;
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const baseUrl = envUrl || `${url.protocol}//${url.host}`;
 
   try {
     const body = await request.json();
