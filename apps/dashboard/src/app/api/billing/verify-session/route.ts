@@ -94,7 +94,7 @@ export async function POST(request: Request) {
 
     if (result.rows.length === 0) {
       // Session was already processed - return current balance
-      const user = await db.query(
+      const user = await db.query<{ credit_balance: string }>(
         `SELECT credit_balance FROM "user" WHERE id = $1`,
         [session.user.id]
       );
@@ -103,12 +103,12 @@ export async function POST(request: Request) {
         success: true,
         alreadyProcessed: true,
         creditAmount,
-        newBalance: parseFloat(user.rows[0]?.credit_balance || "0"),
+        newBalance: parseFloat(String(user.rows[0]?.credit_balance ?? "0")),
         message: "Payment was already credited to your account"
       });
     }
 
-    const newBalance = parseFloat(result.rows[0].credit_balance);
+    const newBalance = parseFloat(String(result.rows[0].credit_balance));
 
     console.log(`[Billing] Credited $${creditAmount} to user ${session.user.id}. New balance: $${newBalance}`);
 
