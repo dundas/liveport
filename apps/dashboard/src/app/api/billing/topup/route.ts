@@ -34,6 +34,10 @@ export async function POST(request: Request) {
     );
   }
 
+  // Get the base URL from environment or request origin
+  const url = new URL(request.url);
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${url.protocol}//${url.host}`;
+
   try {
     const body = await request.json();
     const { amount } = body;
@@ -79,8 +83,8 @@ export async function POST(request: Request) {
         creditAmount: amount.toString(),
         type: "credit_topup",
       },
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/billing?success=true&amount=${amount}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/billing?canceled=true`,
+      success_url: `${baseUrl}/billing?success=true&amount=${amount}`,
+      cancel_url: `${baseUrl}/billing?canceled=true`,
     });
 
     return NextResponse.json({
