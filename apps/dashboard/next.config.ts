@@ -41,6 +41,22 @@ const nextConfig: NextConfig = {
     return config;
   },
 
+  // Rewrites for clean URLs
+  async rewrites() {
+    return [
+      {
+        // Allow curl -fsSL https://liveport.dev/cli | sh
+        source: "/cli",
+        destination: "/api/cli",
+      },
+      {
+        // Alternative install path
+        source: "/install",
+        destination: "/api/cli",
+      },
+    ];
+  },
+
   // Security headers
   async headers() {
     return [
