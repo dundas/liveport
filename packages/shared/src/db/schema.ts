@@ -70,6 +70,7 @@ ALTER TABLE "user" ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
 ALTER TABLE "user" ADD COLUMN IF NOT EXISTS subscription_status TEXT;
 ALTER TABLE "user" ADD COLUMN IF NOT EXISTS tier TEXT DEFAULT 'free';
 ALTER TABLE "user" ADD COLUMN IF NOT EXISTS credit_balance DECIMAL(10,2) DEFAULT 0;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS last_payment_session_id TEXT;
 `.trim();
 
 /**

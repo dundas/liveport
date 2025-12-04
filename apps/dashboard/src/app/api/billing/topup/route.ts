@@ -85,7 +85,7 @@ export async function POST(request: Request) {
         creditAmount: amount.toString(),
         type: "credit_topup",
       },
-      success_url: `${baseUrl}/billing?success=true&amount=${amount}`,
+      success_url: `${baseUrl}/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/billing?canceled=true`,
     });
 

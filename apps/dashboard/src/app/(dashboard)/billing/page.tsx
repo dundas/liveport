@@ -158,19 +158,46 @@ export default function BillingPage() {
     }
   };
 
-  // Check for success/cancel URL params on mount
+  // Check for success/cancel URL params on mount and verify payment
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const success = params.get("success");
-    const amount = params.get("amount");
+    const sessionId = params.get("session_id");
     const canceled = params.get("canceled");
 
-    if (success === "true" && amount) {
-      setSuccessMessage(`Successfully added $${amount} in credits to your account!`);
-      // Clear URL params
-      window.history.replaceState({}, "", "/billing");
-      // Refresh data to show updated balance
-      fetchData();
+    if (success === "true" && sessionId) {
+      // Verify the payment session and credit the account
+      const verifyPayment = async () => {
+        try {
+          const res = await fetch("/api/billing/verify-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId }),
+          });
+          
+          const data = await res.json();
+          
+          if (res.ok && data.success) {
+            if (data.alreadyProcessed) {
+              setSuccessMessage(data.message);
+            } else {
+              setSuccessMessage(`Successfully added $${data.creditAmount} in credits to your account!`);
+            }
+            // Refresh data to show updated balance
+            fetchData();
+          } else {
+            setError(data.error || "Failed to verify payment");
+          }
+        } catch (err) {
+          console.error("Failed to verify payment:", err);
+          setError("Failed to verify payment. Please contact support if credits were not added.");
+        }
+        
+        // Clear URL params
+        window.history.replaceState({}, "", "/billing");
+      };
+      
+      verifyPayment();
     } else if (canceled === "true") {
       setError("Payment was canceled");
       window.history.replaceState({}, "", "/billing");
