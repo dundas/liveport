@@ -42,7 +42,17 @@ export async function getOrCreateStripeCustomer(
   // Check if user already has a Stripe customer ID
   const user = await db.getRecord<UserBillingInfo>("user", userId);
   if (user?.stripe_customer_id) {
-    return user.stripe_customer_id;
+    // Verify the customer exists in Stripe (handles live/test mode mismatch)
+    try {
+      await stripe.customers.retrieve(user.stripe_customer_id);
+      return user.stripe_customer_id;
+    } catch (error) {
+      // Customer doesn't exist (likely mode mismatch), clear and create new
+      console.log(`[Billing] Customer ${user.stripe_customer_id} not found, creating new one`);
+      await db.update("user", userId, {
+        stripe_customer_id: null,
+      });
+    }
   }
 
   // Create new Stripe customer
