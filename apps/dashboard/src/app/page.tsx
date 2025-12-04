@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { CliDemo } from "@/components/landing/cli-demo";
+import { InstallCommand } from "@/components/landing/install-command";
+import { ExternalLink } from "lucide-react";
 
 export default async function LandingPage() {
   const headersList = await headers();
@@ -31,9 +32,14 @@ export default async function LandingPage() {
               <Button variant="default">Dashboard</Button>
             </Link>
           ) : (
-            <Link href="/login">
-              <Button variant="outline">Login</Button>
-            </Link>
+            <>
+              <Link href="/login" className="hidden sm:block">
+                <Button variant="ghost">Login</Button>
+              </Link>
+              <Link href="/signup">
+                <Button variant="default">Get Started</Button>
+              </Link>
+            </>
           )}
         </div>
       </header>
@@ -41,26 +47,43 @@ export default async function LandingPage() {
       <main className="flex-1">
         {/* Hero Section */}
         <section className="relative py-20 lg:py-32 px-6 lg:px-12 border-b border-border overflow-hidden">
-          <div className="absolute top-6 left-6 border border-primary px-2 py-1 text-xs text-primary uppercase tracking-widest">
-            System: Online
+          {/* Status Badge */}
+          <div className="flex items-center gap-4 mb-8">
+            <div className="flex items-center gap-2 border border-primary/50 px-3 py-1.5 text-xs text-primary uppercase tracking-widest">
+              <span className="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+              v1.0 Available
+            </div>
+            <Link 
+              href="https://github.com/dundas/liveport" 
+              target="_blank"
+              className="flex items-center gap-2 border border-border px-3 py-1.5 text-xs text-muted-foreground uppercase tracking-widest hover:text-foreground hover:border-foreground transition-colors"
+            >
+              <span>Open Source</span>
+              <ExternalLink className="w-3 h-3" />
+            </Link>
           </div>
           
-          <div className="max-w-5xl mx-auto">
-            <h1 className="text-5xl lg:text-7xl font-bold leading-tight mb-8 tracking-tighter">
-              EXPOSE <span className="bg-primary text-black px-2">LOCALHOST</span> TO<br />
-              THE WORLD. SECURELY.
+          <div className="max-w-5xl">
+            <h1 className="text-5xl lg:text-7xl font-bold leading-[1.1] mb-8 tracking-tight">
+              Secure Tunnels<br />
+              <span className="text-primary">For AI Agents.</span>
             </h1>
-            <p className="text-xl text-muted-foreground max-w-2xl mb-12 leading-relaxed">
-              Zero-config tunnels for developers and AI agents. Production-grade 
-              infrastructure for your local environment.
+            <p className="text-lg lg:text-xl text-muted-foreground max-w-2xl mb-12 leading-relaxed">
+              Expose your localhost to the internet with one command. 
+              Built for developers and AI agents that need to test 
+              webhooks, share demos, and access local services remotely.
             </p>
 
-            {/* CLI Box */}
-            <CliDemo />
+            {/* Install Command */}
+            <div className="mb-10">
+              <InstallCommand />
+            </div>
 
             <div className="flex flex-col sm:flex-row gap-4">
               <Link href={session ? "/dashboard" : "/signup"}>
-                <Button size="lg" className="w-full sm:w-auto">Get Started</Button>
+                <Button size="lg" className="w-full sm:w-auto">
+                  Get Started Free
+                </Button>
               </Link>
               <Link href="/docs">
                 <Button variant="outline" size="lg" className="w-full sm:w-auto">
@@ -110,17 +133,18 @@ export default async function LandingPage() {
             <div className="bg-black border border-border p-8 font-mono text-sm overflow-x-auto shadow-[12px_12px_0_var(--color-primary)] relative group">
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-transparent opacity-50"></div>
               <pre className="text-muted-foreground">
-                <span className="text-primary">import</span> {"{ LivePortAgent }"} <span className="text-primary">from</span> <span className="text-foreground">"@liveport/agent-sdk"</span>;
+                <span className="text-primary">import</span> {"{ LivePortAgent }"} <span className="text-primary">from</span> <span className="text-foreground">&quot;@liveport/agent-sdk&quot;</span>;
                 {"\n\n"}
                 <span className="text-primary">const</span> agent = <span className="text-primary">new</span> <span className="text-yellow-500">LivePortAgent</span>({"{"}
-                {"\n  "}key: <span className="text-foreground">"lpk_production_key"</span>
-                {"\n"});
+                {"\n  "}key: <span className="text-foreground">&quot;lpk_production_key&quot;</span>
+                {"\n"}{"}"});
                 {"\n\n"}
-                <span className="text-gray-500">// Wait for tunnel to be established</span>
+                {/* Wait for tunnel to be established */}
+                <span className="text-gray-500">{"// Wait for tunnel to be established"}</span>
                 {"\n"}
                 <span className="text-primary">const</span> tunnel = <span className="text-primary">await</span> agent.<span className="text-yellow-500">waitForTunnel</span>();
                 {"\n\n"}
-                console.<span className="text-yellow-500">log</span>(<span className="text-foreground">`Target acquired: ${"{"}tunnel.url{"}"}`</span>);
+                console.<span className="text-yellow-500">log</span>(<span className="text-foreground">{"`Target acquired: ${tunnel.url}`"}</span>);
               </pre>
             </div>
           </div>
