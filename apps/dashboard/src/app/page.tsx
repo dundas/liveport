@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { InstallCommand } from "@/components/landing/install-command";
+import { TerminalMockup } from "@/components/landing/terminal-mockup";
 import { ExternalLink } from "lucide-react";
 
 export default async function LandingPage() {
@@ -46,50 +47,60 @@ export default async function LandingPage() {
 
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="relative py-20 lg:py-32 px-6 lg:px-12 border-b border-border overflow-hidden">
-          {/* Status Badge */}
-          <div className="flex items-center gap-4 mb-8">
-            <div className="flex items-center gap-2 border border-primary/50 px-3 py-1.5 text-xs text-primary uppercase tracking-widest">
-              <span className="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
-              v1.0 Available
-            </div>
-            <Link 
-              href="https://github.com/dundas/liveport" 
-              target="_blank"
-              className="flex items-center gap-2 border border-border px-3 py-1.5 text-xs text-muted-foreground uppercase tracking-widest hover:text-foreground hover:border-foreground transition-colors"
-            >
-              <span>Open Source</span>
-              <ExternalLink className="w-3 h-3" />
-            </Link>
-          </div>
-          
-          <div className="max-w-5xl">
-            <h1 className="text-5xl lg:text-7xl font-bold leading-[1.1] mb-8 tracking-tight">
-              Secure Tunnels<br />
-              <span className="text-primary">For AI Agents.</span>
-            </h1>
-            <p className="text-lg lg:text-xl text-muted-foreground max-w-2xl mb-12 leading-relaxed">
-              Expose your localhost to the internet with one command. 
-              Built for developers and AI agents that need to test 
-              webhooks, share demos, and access local services remotely.
-            </p>
+        <section className="relative py-16 lg:py-24 px-6 lg:px-12 border-b border-border overflow-hidden">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+              {/* Left Column - Text */}
+              <div>
+                {/* Status Badge */}
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="flex items-center gap-2 border border-primary/50 px-3 py-1.5 text-xs text-primary uppercase tracking-widest">
+                    <span className="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+                    v1.0 Available
+                  </div>
+                  <Link 
+                    href="https://github.com/dundas/liveport" 
+                    target="_blank"
+                    className="flex items-center gap-2 border border-border px-3 py-1.5 text-xs text-muted-foreground uppercase tracking-widest hover:text-foreground hover:border-foreground transition-colors"
+                  >
+                    <span>Open Source</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </Link>
+                </div>
+                
+                <h1 className="text-4xl lg:text-6xl font-bold leading-[1.1] mb-6 tracking-tight">
+                  Secure Tunnels<br />
+                  <span className="text-primary">For AI Agents.</span>
+                </h1>
+                <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
+                  Expose your localhost to the internet with one command. 
+                  Built for developers and AI agents that need to test 
+                  webhooks, share demos, and access local services remotely.
+                </p>
 
-            {/* Install Command */}
-            <div className="mb-10">
-              <InstallCommand />
-            </div>
+                {/* Install Command */}
+                <div className="mb-8">
+                  <InstallCommand />
+                </div>
 
-            <div className="flex flex-col sm:flex-row gap-4">
-              <Link href={session ? "/dashboard" : "/signup"}>
-                <Button size="lg" className="w-full sm:w-auto">
-                  Get Started Free
-                </Button>
-              </Link>
-              <Link href="/docs">
-                <Button variant="outline" size="lg" className="w-full sm:w-auto">
-                  Read Documentation
-                </Button>
-              </Link>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <Link href={session ? "/dashboard" : "/signup"}>
+                    <Button size="lg" className="w-full sm:w-auto">
+                      Get Started Free
+                    </Button>
+                  </Link>
+                  <Link href="/docs">
+                    <Button variant="outline" size="lg" className="w-full sm:w-auto">
+                      Read Documentation
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Right Column - Terminal Mockup */}
+              <div className="hidden lg:flex justify-center">
+                <TerminalMockup />
+              </div>
             </div>
           </div>
         </section>
