@@ -47,6 +47,7 @@ export const tunnelSchema = z.object({
   userId: z.string().uuid(),
   bridgeKeyId: z.string().uuid().optional(),
   subdomain: z.string().max(20),
+  name: z.string().max(100).optional(),
   localPort: z.number().int().min(1).max(65535),
   publicUrl: z.string().url(),
   region: z.string().default("us-east"),

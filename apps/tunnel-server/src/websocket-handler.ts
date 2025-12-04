@@ -62,6 +62,7 @@ export interface WebSocketHandlerConfig {
   baseDomain: string;
   heartbeatTimeout: number;
   maxConnectionsPerKey: number;
+  tunnelName?: string;
 }
 
 const defaultConfig: WebSocketHandlerConfig = {
@@ -207,7 +208,8 @@ export async function handleConnection(
     validation.keyId!,
     validation.userId!,
     localPort,
-    validation.expiresAt!
+    validation.expiresAt!,
+    cfg.tunnelName
   );
 
   if (!subdomain) {
@@ -291,6 +293,7 @@ export async function handleConnection(
             userId: connection.userId,
             keyId: connection.keyId,
             subdomain: connection.subdomain,
+            name: connection.name,
             localPort: connection.localPort,
             createdAt: connection.createdAt,
           }

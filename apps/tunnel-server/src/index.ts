@@ -93,6 +93,7 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
     // Extract headers
     const bridgeKey = request.headers["x-bridge-key"] as string;
     const localPort = parseInt(request.headers["x-local-port"] as string, 10);
+    const tunnelName = request.headers["x-tunnel-name"] as string | undefined;
 
     if (!bridgeKey) {
       console.log("[WS] Connection rejected: missing X-Bridge-Key header");
@@ -111,6 +112,7 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
       baseDomain: cfg.baseDomain,
       heartbeatTimeout: cfg.heartbeatTimeout,
       maxConnectionsPerKey: cfg.maxConnectionsPerKey,
+      tunnelName,
     }).catch((err) => {
       console.error("[WS] Error handling connection:", err);
       socket.close(1011, "Server error");

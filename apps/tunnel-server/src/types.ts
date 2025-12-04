@@ -116,6 +116,7 @@ export type ConnectionState =
 export interface TunnelConnection {
   id: string;
   subdomain: string;
+  name?: string; // Optional custom tunnel name
   keyId: string;
   userId: string;
   localPort: number;

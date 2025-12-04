@@ -35,7 +35,8 @@ export class ConnectionManager {
     keyId: string,
     userId: string,
     localPort: number,
-    expiresAt: Date | null
+    expiresAt: Date | null,
+    tunnelName?: string
   ): string | null {
     // Get existing subdomains to check for collisions
     const existingSubdomains = new Set(this.tunnelsBySubdomain.keys());
@@ -51,6 +52,7 @@ export class ConnectionManager {
     const connection: TunnelConnection = {
       id: tunnelId,
       subdomain,
+      name: tunnelName,
       keyId,
       userId,
       localPort,

@@ -24,7 +24,11 @@ const DEFAULT_RECONNECT_MAX_ATTEMPTS = 5;
 const DEFAULT_RECONNECT_BASE_DELAY = 1000; // 1 second
 
 export class TunnelClient {
-  private config: Required<TunnelClientConfig>;
+  private config: TunnelClientConfig & {
+    heartbeatInterval: number;
+    reconnectMaxAttempts: number;
+    reconnectBaseDelay: number;
+  };
   private socket: WebSocket | null = null;
   private state: ConnectionState = "disconnected";
   private tunnelInfo: TunnelInfo | null = null;
@@ -105,11 +109,18 @@ export class TunnelClient {
       this.shouldReconnect = true;
 
       const wsUrl = this.buildWebSocketUrl();
+      const headers: Record<string, string> = {
+        "X-Bridge-Key": this.config.bridgeKey,
+        "X-Local-Port": String(this.config.localPort),
+      };
+      
+      // Add tunnel name if provided
+      if (this.config.tunnelName) {
+        headers["X-Tunnel-Name"] = this.config.tunnelName;
+      }
+      
       this.socket = new WebSocket(wsUrl, {
-        headers: {
-          "X-Bridge-Key": this.config.bridgeKey,
-          "X-Local-Port": String(this.config.localPort),
-        },
+        headers,
       });
 
       // Connection timeout

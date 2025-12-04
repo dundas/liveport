@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS tunnels (
   user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
   bridge_key_id TEXT REFERENCES bridge_keys(id) ON DELETE SET NULL,
   subdomain TEXT UNIQUE NOT NULL,
+  name TEXT,
   local_port INTEGER NOT NULL,
   public_url TEXT NOT NULL,
   region TEXT DEFAULT 'us-east',
@@ -167,6 +168,13 @@ CREATE INDEX IF NOT EXISTS idx_tunnels_user_connected ON tunnels(user_id, connec
 CREATE INDEX IF NOT EXISTS idx_tunnels_billing ON tunnels(user_id, connected_at, disconnected_at) WHERE disconnected_at IS NOT NULL;
 -- Partial index for finalization (active tunnels)
 CREATE INDEX IF NOT EXISTS idx_tunnels_active ON tunnels(id) WHERE disconnected_at IS NULL;
+`.trim();
+
+/**
+ * Migration SQL to add name column to existing tunnels table
+ */
+export const TUNNELS_NAME_MIGRATION_SQL = `
+ALTER TABLE tunnels ADD COLUMN IF NOT EXISTS name TEXT;
 `.trim();
 
 /**

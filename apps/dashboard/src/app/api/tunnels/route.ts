@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
       tunnels: tunnels.map((t) => ({
         id: t.tunnelId,
         subdomain: t.subdomain,
+        name: t.name,
         localPort: t.localPort,
         state: t.state,
         connectedAt: t.createdAt,

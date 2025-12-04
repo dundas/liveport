@@ -117,10 +117,11 @@ export async function syncMetrics(): Promise<void> {
         // ON CONFLICT handles the case where record already exists
         await db.query(
           `INSERT INTO tunnels (
-            id, user_id, bridge_key_id, subdomain, local_port,
+            id, user_id, bridge_key_id, subdomain, name, local_port,
             public_url, region, connected_at, request_count, bytes_transferred
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
             request_count = EXCLUDED.request_count,
             bytes_transferred = EXCLUDED.bytes_transferred
           WHERE tunnels.disconnected_at IS NULL`,
@@ -129,6 +130,7 @@ export async function syncMetrics(): Promise<void> {
             conn.userId,
             conn.keyId,
             conn.subdomain,
+            conn.name || null,
             conn.localPort,
             `https://${conn.subdomain}.${process.env.BASE_DOMAIN || "liveport.online"}`,
             process.env.FLY_REGION || "us-east",
@@ -179,6 +181,7 @@ export async function finalizeTunnelMetrics(
     userId: string;
     keyId: string;
     subdomain: string;
+    name?: string;
     localPort: number;
     createdAt: Date;
   }
@@ -190,10 +193,11 @@ export async function finalizeTunnelMetrics(
       // Use UPSERT to ensure record exists and update with final metrics
       await db.query(
         `INSERT INTO tunnels (
-          id, user_id, bridge_key_id, subdomain, local_port, 
+          id, user_id, bridge_key_id, subdomain, name, local_port, 
           public_url, region, connected_at, request_count, bytes_transferred, disconnected_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
         ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
           request_count = EXCLUDED.request_count,
           bytes_transferred = EXCLUDED.bytes_transferred,
           disconnected_at = NOW()`,
@@ -202,6 +206,7 @@ export async function finalizeTunnelMetrics(
           tunnelInfo.userId,
           tunnelInfo.keyId,
           tunnelInfo.subdomain,
+          tunnelInfo.name || null,
           tunnelInfo.localPort,
           `https://${tunnelInfo.subdomain}.${process.env.BASE_DOMAIN || "liveport.online"}`,
           process.env.FLY_REGION || "us-east",

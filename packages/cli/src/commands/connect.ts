@@ -69,6 +69,7 @@ export async function connectCommand(
     serverUrl,
     bridgeKey,
     localPort,
+    tunnelName: options.name,
   });
 
   // Store for graceful shutdown

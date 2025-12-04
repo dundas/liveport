@@ -42,6 +42,7 @@ interface TunnelRow {
   user_id: string;
   bridge_key_id: string | null;
   subdomain: string;
+  name: string | null;
   local_port: number;
   public_url: string;
   region: string;
@@ -83,6 +84,7 @@ export interface CreateTunnelInput {
   userId: string;
   bridgeKeyId?: string;
   subdomain: string;
+  name?: string;
   localPort: number;
   publicUrl: string;
   region?: string;
@@ -130,6 +132,7 @@ function rowToTunnel(row: TunnelRow): Tunnel {
     userId: row.user_id,
     bridgeKeyId: row.bridge_key_id || undefined,
     subdomain: row.subdomain,
+    name: row.name || undefined,
     localPort: row.local_port,
     publicUrl: row.public_url,
     region: row.region,
@@ -598,13 +601,14 @@ export class TunnelRepository {
   async create(input: CreateTunnelInput): Promise<Tunnel> {
     const result = await this.db.query<TunnelRow>(
       `INSERT INTO ${TABLE_NAMES.TUNNELS}
-       (user_id, bridge_key_id, subdomain, local_port, public_url, region)
-       VALUES ($1, $2, $3, $4, $5, $6)
+       (user_id, bridge_key_id, subdomain, name, local_port, public_url, region)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         input.userId,
         input.bridgeKeyId || null,
         input.subdomain,
+        input.name || null,
         input.localPort,
         input.publicUrl,
         input.region || "us-east",
