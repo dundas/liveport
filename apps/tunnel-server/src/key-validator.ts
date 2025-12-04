@@ -9,6 +9,7 @@ import {
   isValidKeyFormat,
   MechStorageClient,
   BridgeKeyRepository,
+  UserRepository,
   verifyKey,
   isBcryptHash,
   legacySha256Hash,
@@ -19,6 +20,7 @@ export interface KeyValidationResult {
   valid: boolean;
   keyId?: string;
   userId?: string;
+  userTier?: string;
   expiresAt?: Date;
   maxUses?: number;
   currentUses?: number;
@@ -39,6 +41,7 @@ export interface KeyValidatorConfig {
 export class KeyValidator {
   private db: MechStorageClient;
   private repo: BridgeKeyRepository;
+  private userRepo: UserRepository;
   private initialized: boolean = false;
 
   constructor(config?: KeyValidatorConfig) {
@@ -50,6 +53,7 @@ export class KeyValidator {
         baseUrl: config.baseUrl,
       });
       this.repo = new BridgeKeyRepository(this.db);
+      this.userRepo = new UserRepository(this.db);
       this.initialized = true;
     } else {
       // Try to initialize from environment variables
@@ -63,11 +67,13 @@ export class KeyValidator {
           baseUrl: process.env.MECH_APPS_BASE_URL,
         });
         this.repo = new BridgeKeyRepository(this.db);
+        this.userRepo = new UserRepository(this.db);
         this.initialized = true;
       } else {
         // Create placeholder - will fail if validate() called
         this.db = null as unknown as MechStorageClient;
         this.repo = null as unknown as BridgeKeyRepository;
+        this.userRepo = null as unknown as UserRepository;
         console.warn(
           "[KeyValidator] Database not configured. Set MECH_APPS_APP_ID and MECH_APPS_API_KEY."
         );
@@ -114,6 +120,7 @@ export class KeyValidator {
           valid: true,
           keyId: "dev-key",
           userId: "dev-user",
+          userTier: "free",
           expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
           maxUses: undefined,
           currentUses: 0,
@@ -249,10 +256,22 @@ export class KeyValidator {
 
     console.log(`[KeyValidator] Key validated: ${record.keyPrefix} (user: ${record.userId})`);
 
+    // Fetch user tier
+    let userTier = "free"; // Default to free tier
+    try {
+      const user = await this.userRepo.findById(record.userId);
+      if (user) {
+        userTier = user.tier || "free";
+      }
+    } catch (e) {
+      console.warn(`[KeyValidator] Failed to fetch user tier for ${record.userId}:`, e);
+    }
+
     return {
       valid: true,
       keyId: record.id,
       userId: record.userId,
+      userTier,
       expiresAt: record.expiresAt,
       maxUses: record.maxUses,
       currentUses: record.currentUses + 1,

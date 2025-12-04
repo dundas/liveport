@@ -175,14 +175,22 @@ export async function handleConnection(
 
   // Check connection limit per key
   const currentConnections = connectionManager.getCountByKeyId(validation.keyId!);
-  if (currentConnections >= cfg.maxConnectionsPerKey) {
+  
+  // Free tier users can only have 1 open tunnel at a time
+  const maxConnections = validation.userTier === "free" ? 1 : cfg.maxConnectionsPerKey;
+  
+  if (currentConnections >= maxConnections) {
+    const message = validation.userTier === "free" 
+      ? "Free tier limited to 1 open tunnel at a time. Upgrade to a paid plan for multiple concurrent tunnels."
+      : `Maximum ${cfg.maxConnectionsPerKey} connections per key`;
+    
     console.log(
-      `[WebSocket] Connection limit reached for key ${validation.keyId} (${currentConnections}/${cfg.maxConnectionsPerKey})`
+      `[WebSocket] Connection limit reached for ${validation.userTier} tier user ${validation.userId} (${currentConnections}/${maxConnections})`
     );
     sendError(
       socket,
       ErrorCodes.RATE_LIMITED,
-      `Maximum ${cfg.maxConnectionsPerKey} connections per key`,
+      message,
       true,
       CloseCodes.RATE_LIMITED
     );
