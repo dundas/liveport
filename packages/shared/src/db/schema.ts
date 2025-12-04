@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS "user" (
   email TEXT UNIQUE NOT NULL,
   email_verified BOOLEAN DEFAULT FALSE,
   image TEXT,
+  tier TEXT DEFAULT 'free',
+  credit_balance DECIMAL(10,2) DEFAULT 0,
   stripe_customer_id TEXT,
   stripe_subscription_id TEXT,
   subscription_status TEXT,
@@ -66,6 +68,8 @@ export const USER_BILLING_MIGRATION_SQL = `
 ALTER TABLE "user" ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
 ALTER TABLE "user" ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
 ALTER TABLE "user" ADD COLUMN IF NOT EXISTS subscription_status TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS tier TEXT DEFAULT 'free';
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS credit_balance DECIMAL(10,2) DEFAULT 0;
 `.trim();
 
 /**
@@ -214,6 +218,8 @@ export const USER_COLUMNS: ColumnDefinition[] = [
   { name: "email", type: "text", nullable: false, unique: true },
   { name: "email_verified", type: "boolean", nullable: true, defaultValue: "FALSE" },
   { name: "image", type: "text", nullable: true },
+  { name: "tier", type: "text", nullable: true, defaultValue: "'free'" },
+  { name: "credit_balance", type: "decimal", nullable: true, defaultValue: "0" },
   { name: "stripe_customer_id", type: "text", nullable: true },
   { name: "stripe_subscription_id", type: "text", nullable: true },
   { name: "subscription_status", type: "text", nullable: true },

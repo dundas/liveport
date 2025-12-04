@@ -114,6 +114,29 @@ export async function POST(req: Request) {
         break;
       }
 
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        
+        // Check if this is a credit top-up
+        if (session.metadata?.type === "credit_topup" && session.metadata?.userId) {
+          const userId = session.metadata.userId;
+          const creditAmount = parseFloat(session.metadata.creditAmount || "0");
+          
+          if (creditAmount > 0) {
+            // Add credits to user's balance
+            await db.query(
+              `UPDATE "user" 
+               SET credit_balance = COALESCE(credit_balance, 0) + $1,
+                   updated_at = NOW()
+               WHERE id = $2`,
+              [creditAmount, userId]
+            );
+            console.log(`[Stripe Webhook] Added $${creditAmount} credits to user ${userId}`);
+          }
+        }
+        break;
+      }
+
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
         console.log(`[Stripe Webhook] Payment succeeded for invoice ${invoice.id}`);

@@ -42,6 +42,26 @@ interface Invoice {
   pdfUrl: string | null;
 }
 
+interface BalanceData {
+  creditBalance: number;
+  freeTier: {
+    total: number;
+    remaining: number;
+    used: number;
+    limits: {
+      tunnelHours: number;
+      bandwidthGB: number;
+    };
+    remainingLimits: {
+      tunnelHours: number;
+      bandwidthGB: number;
+    };
+  };
+  totalAvailable: number;
+  currentPeriodBillable: number;
+  effectiveBalance: number;
+}
+
 function formatCurrency(amount: number): string {
   if (amount < 0.01) {
     return `$${amount.toFixed(6)}`;
@@ -68,24 +88,22 @@ export default function BillingPage() {
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [balanceData, setBalanceData] = useState<BalanceData | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Mock data - replace with actual API calls
-  const [balance, setBalance] = useState(50.00); // User's credit balance
-  
-  // Free tier: 5 hours tunnel time + 1 GB bandwidth per month
-  // 5 hours * $0.018/hour = $0.09
-  // 1 GB * $0.05/GB = $0.05
-  // Total free tier value = $0.14
-  const freeUsageRemaining = 0.14; // Monthly free tier value
+  // Derived values from balance data
+  const balance = balanceData?.creditBalance ?? 0;
+  const freeUsageRemaining = balanceData?.freeTier.remaining ?? 0.14;
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [usageRes, invoicesRes] = await Promise.all([
+      const [usageRes, invoicesRes, balanceRes] = await Promise.all([
         fetch("/api/billing/usage"),
         fetch("/api/billing/invoices"),
+        fetch("/api/billing/balance"),
       ]);
 
       if (usageRes.ok) {
@@ -96,6 +114,11 @@ export default function BillingPage() {
       if (invoicesRes.ok) {
         const invoicesData = await invoicesRes.json();
         setInvoices(invoicesData.invoices || []);
+      }
+
+      if (balanceRes.ok) {
+        const balanceData = await balanceRes.json();
+        setBalanceData(balanceData);
       }
     } catch (err) {
       setError("Failed to load billing data");
@@ -111,6 +134,7 @@ export default function BillingPage() {
 
   const handleTopUp = async (amount: number) => {
     setActionLoading(`topup-${amount}`);
+    setError(null);
     try {
       const res = await fetch("/api/billing/topup", {
         method: "POST",
@@ -118,11 +142,13 @@ export default function BillingPage() {
         body: JSON.stringify({ amount }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setBalance(data.newBalance);
+      const data = await res.json();
+      
+      if (res.ok && data.url) {
+        // Redirect to Stripe Checkout
+        window.location.href = data.url;
       } else {
-        setError("Failed to process top-up");
+        setError(data.error || "Failed to process top-up");
       }
     } catch (err) {
       setError("Error processing top-up");
@@ -131,6 +157,25 @@ export default function BillingPage() {
       setActionLoading(null);
     }
   };
+
+  // Check for success/cancel URL params on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get("success");
+    const amount = params.get("amount");
+    const canceled = params.get("canceled");
+
+    if (success === "true" && amount) {
+      setSuccessMessage(`Successfully added $${amount} in credits to your account!`);
+      // Clear URL params
+      window.history.replaceState({}, "", "/billing");
+      // Refresh data to show updated balance
+      fetchData();
+    } else if (canceled === "true") {
+      setError("Payment was canceled");
+      window.history.replaceState({}, "", "/billing");
+    }
+  }, [fetchData]);
 
   const handleManagePaymentMethods = async () => {
     setActionLoading("portal");
@@ -163,6 +208,18 @@ export default function BillingPage() {
         <h1 className="text-3xl font-bold tracking-tight">Billing & Credits</h1>
         <p className="text-muted-foreground mt-2">Manage your account balance and usage</p>
       </div>
+
+      {successMessage && (
+        <Card className="border-green-500/50 bg-green-500/5">
+          <CardContent className="pt-6 flex gap-3">
+            <Zap className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-green-700">Success!</p>
+              <p className="text-sm text-muted-foreground">{successMessage}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {error && (
         <Card className="border-destructive/50 bg-destructive/5">
@@ -202,7 +259,15 @@ export default function BillingPage() {
               <span className="text-4xl font-bold">{formatCurrency(freeUsageRemaining)}</span>
               <Badge variant="outline" className="ml-auto bg-green-500/10 text-green-700">Free</Badge>
             </div>
-            <p className="text-xs text-muted-foreground mt-3">5 hours + 1 GB (resets monthly)</p>
+            <p className="text-xs text-muted-foreground mt-3">
+              {balanceData ? (
+                <>
+                  {balanceData.freeTier.remainingLimits.tunnelHours.toFixed(1)}h + {balanceData.freeTier.remainingLimits.bandwidthGB.toFixed(2)} GB remaining
+                </>
+              ) : (
+                "5 hours + 1 GB (resets monthly)"
+              )}
+            </p>
           </CardContent>
         </Card>
 
