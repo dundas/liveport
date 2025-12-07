@@ -11,6 +11,7 @@ export default defineConfig({
     "auth/index": "src/auth/index.ts",
     "crypto/index": "src/crypto/index.ts",
     "logging/index": "src/logging/index.ts",
+    "email/index": "src/email/index.ts",
   },
   format: ["cjs", "esm"],
   dts: true,

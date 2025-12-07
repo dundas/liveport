@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { MechStorageClient } from "@liveport/shared";
+import { MechStorageClient, getEmailClient } from "@liveport/shared";
 import { mechStorageAdapter } from "@liveport/shared/auth";
 
 // Initialize database client
@@ -23,7 +23,44 @@ export const auth = betterAuth({
   database: mechStorageAdapter(db),
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: false, // Disable for MVP
+    requireEmailVerification: !!process.env.CIRCLEINBOX_API_KEY, // Enable if email is configured
+    sendResetPassword: async ({ user, url }) => {
+      if (!process.env.CIRCLEINBOX_API_KEY) {
+        console.warn("CIRCLEINBOX_API_KEY not set, skipping password reset email");
+        return;
+      }
+      try {
+        const emailClient = getEmailClient();
+        const result = await emailClient.sendPasswordReset(user.email, url);
+        if (!result.success) {
+          console.error("Failed to send password reset email:", result.error);
+          throw new Error(result.error?.message || "Failed to send email");
+        }
+      } catch (error) {
+        console.error("Email sending error:", error);
+        throw error;
+      }
+    },
+  },
+  emailVerification: {
+    sendVerificationEmail: async ({ user, url }) => {
+      if (!process.env.CIRCLEINBOX_API_KEY) {
+        console.warn("CIRCLEINBOX_API_KEY not set, skipping verification email");
+        return;
+      }
+      try {
+        const emailClient = getEmailClient();
+        const result = await emailClient.sendEmailConfirmation(user.email, url);
+        if (!result.success) {
+          console.error("Failed to send verification email:", result.error);
+          throw new Error(result.error?.message || "Failed to send email");
+        }
+      } catch (error) {
+        console.error("Email sending error:", error);
+        throw error;
+      }
+    },
+    sendOnSignUp: true,
   },
   socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
   session: {

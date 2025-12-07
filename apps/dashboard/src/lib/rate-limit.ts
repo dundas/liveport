@@ -9,7 +9,6 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { headers } from "next/headers";
 
 export interface RateLimitConfig {
   /** Maximum requests allowed in the window */
@@ -316,28 +315,4 @@ export async function withRateLimit(
 
   const response = await handler();
   return addRateLimitHeaders(response, result);
-}
-
-/**
- * Get rate limit headers for the current request (async version using headers())
- */
-export async function getClientIPFromHeaders(): Promise<string> {
-  const headersList = await headers();
-
-  const forwardedFor = headersList.get("x-forwarded-for");
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0].trim();
-  }
-
-  const realIP = headersList.get("x-real-ip");
-  if (realIP) {
-    return realIP;
-  }
-
-  const flyClientIP = headersList.get("fly-client-ip");
-  if (flyClientIP) {
-    return flyClientIP;
-  }
-
-  return "unknown";
 }

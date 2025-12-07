@@ -55,6 +55,11 @@ export {
   RedisKeys,
   RedisTTL,
 } from "./redis";
+
+// Email
+export { CircleInboxClient, getEmailClient } from "./email";
+export type { EmailClient } from "./email";
+
 export type {
   RedisConfig,
   RedisHealthCheck,
