@@ -1,7 +1,8 @@
 /**
  * Bridge Key API Routes - Single Key Operations
  * 
- * DELETE /api/keys/[id] - Revoke a bridge key
+ * DELETE /api/keys/[id] - Revoke a bridge key (soft delete)
+ * DELETE /api/keys/[id]?permanent=true - Permanently delete a bridge key
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -53,7 +54,23 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    // Revoke the key
+    // Check if permanent delete is requested
+    const { searchParams } = new URL(request.url);
+    const permanent = searchParams.get("permanent") === "true";
+
+    if (permanent) {
+      // Permanently delete the key
+      const deleted = await repo.delete(id);
+      if (!deleted) {
+        return NextResponse.json({ error: "Failed to delete key" }, { status: 500 });
+      }
+      return NextResponse.json({
+        id,
+        message: "Key deleted permanently",
+      });
+    }
+
+    // Revoke the key (soft delete)
     const revokedKey = await repo.revoke(id);
 
     if (!revokedKey) {

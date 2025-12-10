@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Key, Trash2, Loader2 } from "lucide-react";
+import { Key, Trash2, Loader2, XCircle } from "lucide-react";
 import { CreateKeyDialog } from "@/components/keys/create-key-dialog";
 
 interface BridgeKeyResponse {
@@ -33,6 +33,7 @@ export default function KeysPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchKeys = useCallback(async () => {
     try {
@@ -68,6 +69,24 @@ export default function KeysPage() {
       setError(err instanceof Error ? err.message : "Failed to revoke key");
     } finally {
       setRevokingId(null);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      const response = await fetch(`/api/keys/${id}?permanent=true`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to delete key");
+      }
+      // Refresh the list
+      await fetchKeys();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete key");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -164,21 +183,36 @@ export default function KeysPage() {
                     </TableCell>
                     <TableCell>{formatDate(key.expiresAt)}</TableCell>
                     <TableCell>{formatDate(key.createdAt)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-1">
                       {key.status === "active" && new Date(key.expiresAt) > new Date() && (
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleRevoke(key.id)}
                           disabled={revokingId === key.id}
+                          title="Revoke key"
                         >
                           {revokingId === key.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            <Trash2 className="h-4 w-4" />
+                            <XCircle className="h-4 w-4" />
                           )}
                         </Button>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(key.id)}
+                        disabled={deletingId === key.id}
+                        title="Delete key permanently"
+                        className="text-destructive hover:text-destructive"
+                      >
+                        {deletingId === key.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

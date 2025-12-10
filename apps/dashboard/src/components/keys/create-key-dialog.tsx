@@ -55,7 +55,8 @@ export function CreateKeyDialog({ onKeyCreated }: CreateKeyDialogProps) {
       const data = await response.json();
       setCreatedKey(data.key);
       setStep("success");
-      onKeyCreated();
+      // Note: onKeyCreated will be called when user clicks "Done" to avoid
+      // re-render closing the modal before user can copy the key
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create key");
     } finally {
@@ -69,17 +70,24 @@ export function CreateKeyDialog({ onKeyCreated }: CreateKeyDialogProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleClose = () => {
+  const handleClose = (shouldRefresh = false) => {
+    // Capture success state before resetting
+    const wasSuccess = step === "success";
+    
+    // Reset state immediately to avoid race conditions
+    setStep("form");
+    setCreatedKey("");
+    setError("");
+    setExpiresIn("6h");
+    setMaxUses("");
+    setAllowedPort("");
+    
     setOpen(false);
-    // Reset state after dialog closes
-    setTimeout(() => {
-      setStep("form");
-      setCreatedKey("");
-      setError("");
-      setExpiresIn("6h");
-      setMaxUses("");
-      setAllowedPort("");
-    }, 200);
+    
+    // Refresh keys list if a key was created
+    if (shouldRefresh || wasSuccess) {
+      onKeyCreated();
+    }
   };
 
   return (
@@ -151,7 +159,7 @@ export function CreateKeyDialog({ onKeyCreated }: CreateKeyDialogProps) {
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={handleClose}>
+              <Button variant="outline" onClick={() => handleClose()}>
                 Cancel
               </Button>
               <Button onClick={handleCreate} disabled={isLoading}>
@@ -194,7 +202,7 @@ export function CreateKeyDialog({ onKeyCreated }: CreateKeyDialogProps) {
               </code>
             </div>
             <DialogFooter>
-              <Button onClick={handleClose}>Done</Button>
+              <Button onClick={() => handleClose()}>Done</Button>
             </DialogFooter>
           </>
         )}

@@ -76,20 +76,60 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       name = "API Key",
+      expiresIn,
       expiresInDays,
       maxUses,
       allowedPort,
     } = body as {
       name?: string;
+      expiresIn?: string; // "1h", "6h", "24h", "7d"
       expiresInDays?: number;
       maxUses?: number;
       allowedPort?: number;
     };
 
-    // Calculate expiration (optional - keys can be non-expiring)
-    const expiresAt = expiresInDays
-      ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
-      : undefined;
+    // Calculate expiration from expiresIn string or expiresInDays number
+    let expiresAt: Date | undefined;
+    if (expiresIn) {
+      const match = expiresIn.match(/^(\d+)(h|d)$/);
+      if (!match) {
+        return NextResponse.json(
+          { error: "Invalid expiresIn format. Use format like '6h' or '7d'" },
+          { status: 400 }
+        );
+      }
+      const value = parseInt(match[1], 10);
+      const unit = match[2];
+      
+      // Validate reasonable ranges (max 1 year)
+      const maxHours = 8760; // 365 days
+      const maxDays = 365;
+      if (unit === 'h' && (value <= 0 || value > maxHours)) {
+        return NextResponse.json(
+          { error: `Hours must be between 1 and ${maxHours}` },
+          { status: 400 }
+        );
+      }
+      if (unit === 'd' && (value <= 0 || value > maxDays)) {
+        return NextResponse.json(
+          { error: `Days must be between 1 and ${maxDays}` },
+          { status: 400 }
+        );
+      }
+      
+      const ms = unit === 'h' 
+        ? value * 60 * 60 * 1000 
+        : value * 24 * 60 * 60 * 1000;
+      expiresAt = new Date(Date.now() + ms);
+    } else if (expiresInDays) {
+      if (expiresInDays <= 0 || expiresInDays > 365) {
+        return NextResponse.json(
+          { error: "expiresInDays must be between 1 and 365" },
+          { status: 400 }
+        );
+      }
+      expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000);
+    }
 
     // Generate the bridge key
     const rawKey = generateBridgeKey();
