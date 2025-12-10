@@ -3,15 +3,16 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 
-type Platform = "unix" | "windows";
+type Platform = "npm" | "pnpm" | "npx";
 
 const INSTALL_COMMANDS: Record<Platform, string> = {
-  unix: "curl -fsSL https://liveport.dev/cli | sh",
-  windows: "irm https://liveport.dev/install.ps1 | iex",
+  npm: "npm install -g @liveport/cli",
+  pnpm: "pnpm add -g @liveport/cli",
+  npx: "npx @liveport/cli connect 3000",
 };
 
 export function InstallCommand() {
-  const [platform, setPlatform] = useState<Platform>("unix");
+  const [platform, setPlatform] = useState<Platform>("npm");
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -25,24 +26,34 @@ export function InstallCommand() {
       {/* Platform Tabs */}
       <div className="flex gap-2 mb-2">
         <button
-          onClick={() => setPlatform("unix")}
+          onClick={() => setPlatform("npm")}
           className={`px-4 py-2 text-sm font-medium border transition-colors ${
-            platform === "unix"
+            platform === "npm"
               ? "bg-background text-foreground border-border"
               : "bg-transparent text-muted-foreground border-transparent hover:text-foreground"
           }`}
         >
-          MACOS / LINUX
+          NPM
         </button>
         <button
-          onClick={() => setPlatform("windows")}
+          onClick={() => setPlatform("pnpm")}
           className={`px-4 py-2 text-sm font-medium border transition-colors ${
-            platform === "windows"
+            platform === "pnpm"
               ? "bg-background text-foreground border-border"
               : "bg-transparent text-muted-foreground border-transparent hover:text-foreground"
           }`}
         >
-          WINDOWS
+          PNPM
+        </button>
+        <button
+          onClick={() => setPlatform("npx")}
+          className={`px-4 py-2 text-sm font-medium border transition-colors ${
+            platform === "npx"
+              ? "bg-background text-foreground border-border"
+              : "bg-transparent text-muted-foreground border-transparent hover:text-foreground"
+          }`}
+        >
+          NPX
         </button>
       </div>
 

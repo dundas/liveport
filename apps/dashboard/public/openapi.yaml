@@ -14,7 +14,7 @@ info:
     ### Bridge Key Authentication (Agent API)
     Used by AI agents and CLI tools. Pass your bridge key in the `Authorization` header:
     ```
-    Authorization: Bearer bk_xxxxxxxxxxxxxxxxxxxx
+    Authorization: Bearer lpk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     ```
   version: 0.1.0
   contact:
@@ -65,7 +65,7 @@ paths:
                 keys:
                   - id: "key_abc123"
                     name: "Production Key"
-                    prefix: "bk_abc1"
+                    prefix: "lpk_abc12345"
                     status: "active"
                     expiresAt: "2025-12-31T23:59:59Z"
                     maxUses: 1000
@@ -106,10 +106,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreateKeyResponse'
               example:
-                key: "bk_abc123def456ghi789jkl012mno345"
+                key: "lpk_abc123def456ghi789jkl012mno345"
                 id: "key_xyz789"
                 name: "CI/CD Key"
-                prefix: "bk_abc1"
+                prefix: "lpk_abc12345"
                 expiresAt: "2025-12-27T13:45:00Z"
                 maxUses: 100
                 allowedPort: null
@@ -361,7 +361,7 @@ components:
       bearerFormat: BridgeKey
       description: |
         Bridge key authentication for agent API.
-        Format: `Bearer bk_xxxxxxxxxxxxxxxxxxxx`
+        Format: `Bearer lpk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
 
   schemas:
     BridgeKey:
@@ -375,7 +375,7 @@ components:
           description: User-defined key name
         prefix:
           type: string
-          description: First 8 characters of the key (for identification)
+          description: First 12 characters of the key (for identification)
         status:
           type: string
           enum: [active, revoked, expired]
