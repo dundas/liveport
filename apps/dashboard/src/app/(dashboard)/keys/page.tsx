@@ -3,6 +3,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -34,6 +42,7 @@ export default function KeysPage() {
   const [error, setError] = useState("");
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [keyToDelete, setKeyToDelete] = useState<BridgeKeyResponse | null>(null);
 
   const fetchKeys = useCallback(async () => {
     try {
@@ -72,10 +81,12 @@ export default function KeysPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    setDeletingId(id);
+  const handleDeleteConfirm = async () => {
+    if (!keyToDelete) return;
+    
+    setDeletingId(keyToDelete.id);
     try {
-      const response = await fetch(`/api/keys/${id}?permanent=true`, {
+      const response = await fetch(`/api/keys/${keyToDelete.id}?permanent=true`, {
         method: "DELETE",
       });
       if (!response.ok) {
@@ -87,6 +98,7 @@ export default function KeysPage() {
       setError(err instanceof Error ? err.message : "Failed to delete key");
     } finally {
       setDeletingId(null);
+      setKeyToDelete(null);
     }
   };
 
@@ -202,7 +214,7 @@ export default function KeysPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(key.id)}
+                        onClick={() => setKeyToDelete(key)}
                         disabled={deletingId === key.id}
                         title="Delete key permanently"
                         className="text-destructive hover:text-destructive"
@@ -221,6 +233,42 @@ export default function KeysPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!keyToDelete} onOpenChange={(open) => !open && setKeyToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Bridge Key</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to permanently delete this key? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {keyToDelete && (
+            <div className="py-4">
+              <p className="text-sm text-muted-foreground">Key to delete:</p>
+              <code className="mt-2 block rounded bg-muted px-3 py-2 text-sm font-mono">
+                {keyToDelete.prefix}...
+              </code>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setKeyToDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={deletingId === keyToDelete?.id}
+            >
+              {deletingId === keyToDelete?.id ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Deleting...</>
+              ) : (
+                "Delete Key"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
