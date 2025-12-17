@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import http from "node:http";
 import type { Socket } from "node:net";
 import net from "node:net";
+import { createLogger } from "@liveport/shared/logging";
 import { getKeyValidator } from "./key-validator";
 import { verifyProxyToken, type ProxyTokenClaims } from "./proxy-token";
 import { resolveUpstreamProxyFromClaims } from "./proxy-providers";
@@ -10,6 +11,149 @@ export interface ProxyGatewayConfig {
   enabled: boolean;
   tokenSecret: string;
   requestTimeoutMs: number;
+}
+
+const logger = createLogger({ service: "tunnel-server:proxy-gateway" });
+
+type AllowedHostPorts = Set<number> | null;
+
+function parseCsvEnv(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function normalizeHostname(hostname: string): string {
+  return hostname.trim().toLowerCase();
+}
+
+function parseAllowedHosts(raw: string | undefined): Map<string, AllowedHostPorts> {
+  const entries = parseCsvEnv(raw);
+  const map = new Map<string, AllowedHostPorts>();
+
+  for (const entry of entries) {
+    let url: URL;
+    try {
+      url = entry.includes("://") ? new URL(entry) : new URL(`http://${entry}`);
+    } catch {
+      continue;
+    }
+
+    const host = normalizeHostname(url.hostname);
+    if (!host) continue;
+
+    const port = url.port ? parseInt(url.port, 10) : null;
+    if (port !== null && Number.isFinite(port)) {
+      const existing = map.get(host);
+      if (existing === null) {
+        continue;
+      }
+      const ports = existing ?? new Set<number>();
+      ports.add(port);
+      map.set(host, ports);
+      continue;
+    }
+
+    map.set(host, null);
+  }
+
+  return map;
+}
+
+function parseAllowedDomains(raw: string | undefined): string[] {
+  return parseCsvEnv(raw)
+    .map((d) => d.replace(/^\*\./, "").replace(/^\./, ""))
+    .map((d) => d.toLowerCase())
+    .filter(Boolean);
+}
+
+const allowedHosts = parseAllowedHosts(process.env.PROXY_ALLOWED_HOSTS);
+const allowedDomains = parseAllowedDomains(process.env.PROXY_ALLOWED_DOMAINS);
+
+function isProxyTargetAllowed(hostnameRaw: string, port: number): boolean {
+  if (allowedHosts.size === 0 && allowedDomains.length === 0) {
+    return true;
+  }
+
+  const hostname = normalizeHostname(hostnameRaw);
+
+  const ports = allowedHosts.get(hostname);
+  if (ports) {
+    return ports.has(port);
+  }
+  if (ports === null) {
+    return true;
+  }
+
+  for (const domain of allowedDomains) {
+    if (hostname === domain) return true;
+    if (hostname.endsWith(`.${domain}`)) return true;
+  }
+
+  return false;
+}
+
+function getDefaultPortForUrl(url: URL): number {
+  if (url.port) {
+    const port = parseInt(url.port, 10);
+    if (Number.isFinite(port)) return port;
+  }
+  return url.protocol === "https:" ? 443 : 80;
+}
+
+function parseConnectTarget(target: string): { host: string; port: number } | null {
+  try {
+    const url = new URL(`http://${target}`);
+    const port = url.port ? parseInt(url.port, 10) : 443;
+    if (!url.hostname || !port || Number.isNaN(port)) {
+      return null;
+    }
+    return { host: url.hostname, port };
+  } catch {
+    return null;
+  }
+}
+
+function createUsageRecorder(params: {
+  kind: "http" | "connect";
+  keyId: string;
+  userId: string;
+  provider: string;
+  targetHost: string;
+  targetPort: number;
+}) {
+  let bytesUp = 0;
+  let bytesDown = 0;
+  let done = false;
+
+  return {
+    addUp(n: number) {
+      bytesUp += n;
+    },
+    addDown(n: number) {
+      bytesDown += n;
+    },
+    finalize(extra?: Record<string, unknown>) {
+      if (done) return;
+      done = true;
+      logger.info(
+        {
+          kind: params.kind,
+          keyId: params.keyId,
+          userId: params.userId,
+          provider: params.provider,
+          targetHost: params.targetHost,
+          targetPort: params.targetPort,
+          bytesUp,
+          bytesDown,
+          ...extra,
+        },
+        "proxy_usage"
+      );
+    },
+  };
 }
 
 function isAbsoluteUrl(url: string | undefined): boolean {
@@ -173,6 +317,22 @@ export function createProxyRequestInterceptor(cfg: ProxyGatewayConfig) {
       return;
     }
 
+    const targetPort = getDefaultPortForUrl(targetUrl);
+    if (!isProxyTargetAllowed(targetUrl.hostname, targetPort)) {
+      res.writeHead(403, { "Content-Type": "text/plain" });
+      res.end("Forbidden");
+      return;
+    }
+
+    const usage = createUsageRecorder({
+      kind: "http",
+      keyId: auth.keyId,
+      userId: auth.userId,
+      provider: auth.providerClaims.provider,
+      targetHost: targetUrl.hostname,
+      targetPort,
+    });
+
     let upstream;
     try {
       upstream = resolveUpstreamProxyFromClaims(auth.providerClaims);
@@ -197,6 +357,10 @@ export function createProxyRequestInterceptor(cfg: ProxyGatewayConfig) {
         timeout: cfg.requestTimeoutMs,
       },
       (upstreamRes) => {
+        upstreamRes.on("data", (chunk) => {
+          usage.addDown(chunk.length);
+        });
+
         const responseHeaders: Record<string, string | string[]> = {};
         for (const [k, v] of Object.entries(upstreamRes.headers)) {
           if (!v) continue;
@@ -220,6 +384,10 @@ export function createProxyRequestInterceptor(cfg: ProxyGatewayConfig) {
 
         res.writeHead(upstreamRes.statusCode || 502, responseHeaders);
         upstreamRes.pipe(res);
+
+        upstreamRes.on("end", () => {
+          usage.finalize({ statusCode: upstreamRes.statusCode || 0 });
+        });
       }
     );
 
@@ -228,15 +396,21 @@ export function createProxyRequestInterceptor(cfg: ProxyGatewayConfig) {
     });
 
     upstreamReq.on("error", () => {
+      usage.finalize({ error: "upstream_error" });
       if (!res.headersSent) {
         send502(res, "Upstream request failed");
       }
       res.end();
     });
 
+    req.on("data", (chunk) => {
+      usage.addUp(chunk.length);
+    });
+
     req.pipe(upstreamReq);
 
     res.on("close", () => {
+      usage.finalize({ closedEarly: true });
       upstreamReq.destroy();
     });
   };
@@ -270,12 +444,32 @@ export function createProxyConnectHandler(cfg: ProxyGatewayConfig) {
       return;
     }
 
-    const [host, portStr] = target.split(":");
-    const port = parseInt(portStr || "443", 10);
-    if (!host || !port || Number.isNaN(port)) {
+    const parsed = parseConnectTarget(target);
+    if (!parsed) {
       sendConnectResponse(clientSocket, "HTTP/1.1 400 Bad Request");
       clientSocket.destroy();
       return;
+    }
+
+    const { host, port } = parsed;
+
+    if (!isProxyTargetAllowed(host, port)) {
+      sendConnectResponse(clientSocket, "HTTP/1.1 403 Forbidden");
+      clientSocket.destroy();
+      return;
+    }
+
+    const usage = createUsageRecorder({
+      kind: "connect",
+      keyId: auth.keyId,
+      userId: auth.userId,
+      provider: auth.providerClaims.provider,
+      targetHost: host,
+      targetPort: port,
+    });
+
+    if (head && head.length) {
+      usage.addUp(head.length);
     }
 
     let upstream;
@@ -308,6 +502,7 @@ export function createProxyConnectHandler(cfg: ProxyGatewayConfig) {
       let buffer = Buffer.alloc(0);
 
       const onData = (chunk: Buffer) => {
+        usage.addDown(chunk.length);
         buffer = Buffer.concat([buffer, chunk]);
         const idx = buffer.indexOf("\r\n\r\n");
         if (idx === -1) return;
@@ -321,6 +516,7 @@ export function createProxyConnectHandler(cfg: ProxyGatewayConfig) {
         const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 0;
 
         if (statusCode !== 200) {
+          usage.finalize({ statusCode });
           clientSocket.write(headerPart);
           if (rest.length) clientSocket.write(rest);
           clientSocket.destroy();
@@ -338,6 +534,13 @@ export function createProxyConnectHandler(cfg: ProxyGatewayConfig) {
           clientSocket.write(rest);
         }
 
+        clientSocket.on("data", (chunk) => {
+          usage.addUp(chunk.length);
+        });
+        upstreamSocket.on("data", (chunk) => {
+          usage.addDown(chunk.length);
+        });
+
         clientSocket.pipe(upstreamSocket);
         upstreamSocket.pipe(clientSocket);
         clearTimeout(timeout);
@@ -347,13 +550,19 @@ export function createProxyConnectHandler(cfg: ProxyGatewayConfig) {
     });
 
     clientSocket.on("error", () => {
+      usage.finalize({ error: "client_error" });
       clearTimeout(timeout);
       upstreamSocket.destroy();
     });
 
     clientSocket.on("close", () => {
+      usage.finalize({ closed: true });
       clearTimeout(timeout);
       upstreamSocket.destroy();
+    });
+
+    upstreamSocket.on("close", () => {
+      usage.finalize({ upstreamClosed: true });
     });
   };
 }
