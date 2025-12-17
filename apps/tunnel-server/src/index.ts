@@ -7,6 +7,9 @@
 
 import { serve } from "@hono/node-server";
 import { WebSocketServer, WebSocket } from "ws";
+import http from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Socket as NetSocket } from "node:net";
 import { fileURLToPath } from "url";
 import { createHttpHandler } from "./http-handler";
 import { handleConnection } from "./websocket-handler";
@@ -15,6 +18,7 @@ import { startMetering, stopMetering, syncMetrics } from "./metering";
 import { initializeSchema, getDatabase } from "@liveport/shared";
 import { createLogger } from "@liveport/shared/logging";
 import type { TunnelServerConfig } from "./types";
+import { createProxyConnectHandler, createProxyRequestInterceptor } from "./proxy-gateway";
 
 const logger = createLogger({ service: "tunnel-server" });
 
@@ -71,12 +75,51 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
     requestTimeout: cfg.requestTimeout,
   });
 
+  const proxyEnabled = process.env.PROXY_GATEWAY_ENABLED === "true";
+  const proxyTokenSecret = process.env.PROXY_TOKEN_SECRET || "";
+  if (proxyEnabled && !proxyTokenSecret) {
+    console.error("PROXY_TOKEN_SECRET must be set when PROXY_GATEWAY_ENABLED=true");
+    process.exit(1);
+  }
+
+  const proxyConfig = {
+    enabled: proxyEnabled,
+    tokenSecret: proxyTokenSecret,
+    requestTimeoutMs: parseInt(process.env.PROXY_GATEWAY_TIMEOUT_MS || "30000", 10),
+  };
+
+  const proxyInterceptor = createProxyRequestInterceptor(proxyConfig);
+  const proxyConnectHandler = createProxyConnectHandler(proxyConfig);
+
   // Start HTTP server
   const server = serve(
     {
       fetch: httpApp.fetch,
       port: cfg.port,
       hostname: cfg.host,
+      createServer: ((serverOptions?: unknown, requestListener?: unknown) => {
+        const options = (serverOptions && typeof serverOptions === "object" ? serverOptions : {}) as http.ServerOptions;
+        const listener = requestListener as ((req: IncomingMessage, res: ServerResponse) => void) | undefined;
+
+        const srv = http.createServer(options, (req, res) => {
+          if (!listener) {
+            res.statusCode = 500;
+            res.end("Server misconfigured");
+            return;
+          }
+          void proxyInterceptor(req, res, async (r, s) => {
+            await listener(r, s);
+          });
+        });
+
+        srv.on("connect", (req, socket, head) => {
+          proxyConnectHandler(req, socket as unknown as NetSocket, head).catch(() => {
+            (socket as unknown as NetSocket).destroy();
+          });
+        });
+
+        return srv;
+      }) as unknown as typeof http.createServer,
     },
     (info) => {
       console.log(`HTTP server listening on http://${cfg.host}:${info.port}`);

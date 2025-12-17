@@ -29,6 +29,12 @@ export interface KeyValidationResult {
   errorCode?: string;
 }
 
+export interface KeyValidationOptions {
+  skipPortCheck?: boolean;
+  skipUsageUpdate?: boolean;
+  skipMaxUsesCheck?: boolean;
+}
+
 export interface KeyValidatorConfig {
   appId: string;
   apiKey: string;
@@ -100,7 +106,8 @@ export class KeyValidator {
    */
   async validate(
     key: string,
-    requestedPort: number
+    requestedPort: number,
+    options: KeyValidationOptions = {}
   ): Promise<KeyValidationResult> {
     // Check format first
     if (!this.isValidFormat(key)) {
@@ -226,32 +233,38 @@ export class KeyValidator {
     }
 
     // Check usage limit
-    if (record.maxUses !== undefined && record.currentUses >= record.maxUses) {
-      console.log(`[KeyValidator] Key max uses reached: ${record.keyPrefix}`);
-      return {
-        valid: false,
-        error: "Key has reached maximum uses",
-        errorCode: "RATE_LIMITED",
-      };
+    if (!options.skipMaxUsesCheck) {
+      if (record.maxUses !== undefined && record.currentUses >= record.maxUses) {
+        console.log(`[KeyValidator] Key max uses reached: ${record.keyPrefix}`);
+        return {
+          valid: false,
+          error: "Key has reached maximum uses",
+          errorCode: "RATE_LIMITED",
+        };
+      }
     }
 
     // Check port restriction
-    if (record.allowedPort !== undefined && record.allowedPort !== requestedPort) {
-      console.log(`[KeyValidator] Port mismatch: ${record.keyPrefix} allows ${record.allowedPort}, requested ${requestedPort}`);
-      return {
-        valid: false,
-        error: `Key only allows port ${record.allowedPort}`,
-        errorCode: "PORT_NOT_ALLOWED",
-      };
+    if (!options.skipPortCheck) {
+      if (record.allowedPort !== undefined && record.allowedPort !== requestedPort) {
+        console.log(`[KeyValidator] Port mismatch: ${record.keyPrefix} allows ${record.allowedPort}, requested ${requestedPort}`);
+        return {
+          valid: false,
+          error: `Key only allows port ${record.allowedPort}`,
+          errorCode: "PORT_NOT_ALLOWED",
+        };
+      }
     }
 
     // Increment usage count and update last used
-    try {
-      await this.repo.incrementUseCount(record.id);
-      await this.repo.updateLastUsed(record.id);
-    } catch (e) {
-      console.error("[KeyValidator] Failed to update usage count:", e);
-      // Don't fail validation for this
+    if (!options.skipUsageUpdate) {
+      try {
+        await this.repo.incrementUseCount(record.id);
+        await this.repo.updateLastUsed(record.id);
+      } catch (e) {
+        console.error("[KeyValidator] Failed to update usage count:", e);
+        // Don't fail validation for this
+      }
     }
 
     console.log(`[KeyValidator] Key validated: ${record.keyPrefix} (user: ${record.userId})`);
@@ -284,7 +297,7 @@ export class KeyValidator {
       userTier: userTier || "free",
       expiresAt: record.expiresAt,
       maxUses: record.maxUses,
-      currentUses: record.currentUses + 1,
+      currentUses: options.skipUsageUpdate ? record.currentUses : record.currentUses + 1,
       allowedPort: record.allowedPort ?? null,
     };
   }
