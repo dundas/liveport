@@ -35,20 +35,21 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
-let hmacKeyPromise: Promise<CryptoKey> | null = null;
+const hmacKeyCache = new Map<string, Promise<CryptoKey>>();
 
 async function getHmacKey(secret: string): Promise<CryptoKey> {
-  if (!hmacKeyPromise) {
+  if (!hmacKeyCache.has(secret)) {
     const encoder = new TextEncoder();
-    hmacKeyPromise = webcrypto.subtle.importKey(
+    const keyPromise = webcrypto.subtle.importKey(
       "raw",
       encoder.encode(secret),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["sign"]
     );
+    hmacKeyCache.set(secret, keyPromise);
   }
-  return hmacKeyPromise;
+  return hmacKeyCache.get(secret)!;
 }
 
 export async function signProxyToken(claims: ProxyTokenClaims, secret: string): Promise<string> {
