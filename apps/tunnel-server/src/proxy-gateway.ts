@@ -73,8 +73,13 @@ const allowedHosts = parseAllowedHosts(process.env.PROXY_ALLOWED_HOSTS);
 const allowedDomains = parseAllowedDomains(process.env.PROXY_ALLOWED_DOMAINS);
 
 function isProxyTargetAllowed(hostnameRaw: string, port: number): boolean {
+  // Fail-safe: deny all if no allowlist configured
   if (allowedHosts.size === 0 && allowedDomains.length === 0) {
-    return true;
+    logger.error({
+      hostname: hostnameRaw,
+      port,
+    }, 'Proxy target check with empty allowlist - denying request (fail-safe)');
+    return false;
   }
 
   const hostname = normalizeHostname(hostnameRaw);
