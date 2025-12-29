@@ -5,12 +5,19 @@
  */
 
 /**
- * List of superuser emails with unlimited access
+ * Get superuser emails from environment variable
+ * Format: SUPERUSER_EMAILS=email1@example.com,email2@example.com
  * These users bypass all rate limits, billing checks, and restrictions
  */
-const SUPERUSER_EMAILS = [
-  "git@davidddundas.com",
-];
+function getSuperuserEmails(): string[] {
+  const envEmails = process.env.SUPERUSER_EMAILS || '';
+  return envEmails
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+const SUPERUSER_EMAILS = getSuperuserEmails();
 
 /**
  * User roles in the system

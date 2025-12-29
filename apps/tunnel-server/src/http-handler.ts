@@ -111,7 +111,10 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
 
     // Validate internal API secret
     const expectedSecret = process.env.INTERNAL_API_SECRET;
-    if (expectedSecret && apiSecret !== expectedSecret) {
+    if (!expectedSecret) {
+      return c.json({ error: "Internal server error: INTERNAL_API_SECRET not configured" }, 500);
+    }
+    if (apiSecret !== expectedSecret) {
       return c.json({ error: "Unauthorized" }, 401);
     }
 
@@ -136,7 +139,10 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
     const apiSecret = c.req.header("x-api-secret");
 
     const expectedSecret = process.env.INTERNAL_API_SECRET;
-    if (expectedSecret && apiSecret !== expectedSecret) {
+    if (!expectedSecret) {
+      return c.json({ error: "Internal server error: INTERNAL_API_SECRET not configured" }, 500);
+    }
+    if (apiSecret !== expectedSecret) {
       return c.json({ error: "Unauthorized" }, 401);
     }
 
@@ -158,6 +164,10 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
       return c.json({ error: "Missing keyId" }, 400);
     }
 
+    // Token expiration time (in seconds)
+    // Default: 600 seconds (10 minutes)
+    // Min: 30 seconds
+    // Max: 3600 seconds (1 hour)
     const ttlSecondsRaw = body.ttlSeconds;
     const ttlSeconds = Math.min(
       Math.max(typeof ttlSecondsRaw === "number" ? Math.floor(ttlSecondsRaw) : 600, 30),

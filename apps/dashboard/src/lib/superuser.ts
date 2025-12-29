@@ -7,6 +7,9 @@
 import { NextResponse } from "next/server";
 import { isSuperuser } from "@liveport/shared/auth";
 import type { User } from "./auth";
+import { getLogger } from "./logger";
+
+const logger = getLogger("dashboard:superuser");
 
 /**
  * Check if a user has superuser access
@@ -17,8 +20,7 @@ export function isUserSuperuser(user: User): boolean {
   if (!user.email) return false;
 
   // Check both role field and email hardcoded list
-  const role = (user as any).role as string | undefined;
-  return isSuperuser(user.email, role);
+  return isSuperuser(user.email, user.role);
 }
 
 /**
@@ -41,12 +43,25 @@ export function isUserSuperuser(user: User): boolean {
  * ```
  */
 export function requireSuperuser(user: User): NextResponse | null {
-  if (!isUserSuperuser(user)) {
+  const isSuperuser = isUserSuperuser(user);
+
+  if (!isSuperuser) {
+    logger.warn({
+      userId: user.id,
+      email: user.email,
+    }, "Non-superuser attempted to access superuser-only route");
+
     return NextResponse.json(
       { error: "Forbidden: Superuser access required" },
       { status: 403 }
     );
   }
+
+  logger.info({
+    userId: user.id,
+    email: user.email,
+  }, "Superuser accessed protected route");
+
   return null;
 }
 
@@ -55,7 +70,16 @@ export function requireSuperuser(user: User): NextResponse | null {
  * Superusers get unlimited access
  */
 export function hasBypassLimits(user: User): boolean {
-  return isUserSuperuser(user);
+  const isSuperuser = isUserSuperuser(user);
+
+  if (isSuperuser) {
+    logger.info({
+      userId: user.id,
+      email: user.email,
+    }, "Superuser bypassing limits");
+  }
+
+  return isSuperuser;
 }
 
 /**

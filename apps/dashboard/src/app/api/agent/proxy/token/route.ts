@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   }
 
   const rateLimit = await checkRateLimitAsync(auth.keyId!, {
-    maxRequests: 30,
+    maxRequests: 10, // Reduced from 30 to prevent token abuse
     windowMs: 60_000,
     keyPrefix: "agent:proxy:token",
   });

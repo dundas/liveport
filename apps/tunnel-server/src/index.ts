@@ -77,9 +77,29 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
 
   const proxyEnabled = process.env.PROXY_GATEWAY_ENABLED === "true";
   const proxyTokenSecret = process.env.PROXY_TOKEN_SECRET || "";
-  if (proxyEnabled && !proxyTokenSecret) {
-    console.error("PROXY_TOKEN_SECRET must be set when PROXY_GATEWAY_ENABLED=true");
-    process.exit(1);
+
+  // Validate PROXY_TOKEN_SECRET
+  if (proxyEnabled) {
+    if (!proxyTokenSecret) {
+      console.error("PROXY_TOKEN_SECRET must be set when PROXY_GATEWAY_ENABLED=true");
+      process.exit(1);
+    }
+    if (proxyTokenSecret.length < 32) {
+      console.error("PROXY_TOKEN_SECRET must be at least 32 characters long");
+      console.error(`Current length: ${proxyTokenSecret.length} characters`);
+      process.exit(1);
+    }
+
+    // Warn if no proxy allowlist is configured (default-open is dangerous)
+    const hasAllowedHosts = !!process.env.PROXY_ALLOWED_HOSTS;
+    const hasAllowedDomains = !!process.env.PROXY_ALLOWED_DOMAINS;
+
+    if (!hasAllowedHosts && !hasAllowedDomains) {
+      console.warn("⚠️  WARNING: Proxy gateway is running without an allowlist!");
+      console.warn("   PROXY_ALLOWED_HOSTS and PROXY_ALLOWED_DOMAINS are not set");
+      console.warn("   This allows proxying to ANY destination - potential security risk");
+      console.warn("   Set PROXY_ALLOWED_HOSTS or PROXY_ALLOWED_DOMAINS to restrict targets");
+    }
   }
 
   const proxyConfig = {
