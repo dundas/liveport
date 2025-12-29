@@ -19,6 +19,7 @@ import { initializeSchema, getDatabase } from "@liveport/shared";
 import { createLogger } from "@liveport/shared/logging";
 import type { TunnelServerConfig } from "./types";
 import { createProxyConnectHandler, createProxyRequestInterceptor } from "./proxy-gateway";
+import { validateTunnelServerSecrets } from "./validate-secrets";
 
 const logger = createLogger({ service: "tunnel-server" });
 
@@ -46,7 +47,19 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
   console.log("=".repeat(50));
   console.log("LivePort Tunnel Server");
   console.log("=".repeat(50));
-  
+
+  // Validate secrets before proceeding
+  try {
+    console.log("🔐 Validating secrets...");
+    validateTunnelServerSecrets();
+    console.log("✅ All secrets validated successfully");
+  } catch (error) {
+    console.error("❌ Secret validation failed:");
+    console.error(error instanceof Error ? error.message : String(error));
+    console.error("\nTunnel server will not start until secrets are properly configured.");
+    process.exit(1);
+  }
+
   // Initialize database schema
   try {
     console.log("Initializing database schema...");
@@ -78,18 +91,8 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
   const proxyEnabled = process.env.PROXY_GATEWAY_ENABLED === "true";
   const proxyTokenSecret = process.env.PROXY_TOKEN_SECRET || "";
 
-  // Validate PROXY_TOKEN_SECRET
+  // Validate proxy allowlist when proxy is enabled
   if (proxyEnabled) {
-    if (!proxyTokenSecret) {
-      console.error("PROXY_TOKEN_SECRET must be set when PROXY_GATEWAY_ENABLED=true");
-      process.exit(1);
-    }
-    if (proxyTokenSecret.length < 32) {
-      console.error("PROXY_TOKEN_SECRET must be at least 32 characters long");
-      console.error(`Current length: ${proxyTokenSecret.length} characters`);
-      process.exit(1);
-    }
-
     // Require proxy allowlist (default-open is a security vulnerability)
     const hasAllowedHosts = !!process.env.PROXY_ALLOWED_HOSTS;
     const hasAllowedDomains = !!process.env.PROXY_ALLOWED_DOMAINS;
