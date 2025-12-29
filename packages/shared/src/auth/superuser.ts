@@ -1,0 +1,105 @@
+/**
+ * Superuser Utilities
+ *
+ * Utilities for checking and managing superuser access.
+ */
+
+/**
+ * Get superuser emails from environment variable
+ * Format: SUPERUSER_EMAILS=email1@example.com,email2@example.com
+ * These users bypass all rate limits, billing checks, and restrictions
+ *
+ * Returns empty array if SUPERUSER_EMAILS is not set
+ */
+function getSuperuserEmails(): string[] {
+  const envEmails = process.env.SUPERUSER_EMAILS;
+
+  // If not set, return empty array and log error
+  if (!envEmails) {
+    console.error('❌ SUPERUSER_EMAILS environment variable is not set');
+    console.error('   No superuser access will be granted');
+    console.error('   Set SUPERUSER_EMAILS=email1@example.com,email2@example.com');
+    return [];
+  }
+
+  return envEmails
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+const SUPERUSER_EMAILS = getSuperuserEmails();
+
+/**
+ * User roles in the system
+ */
+export type UserRole = "user" | "superuser";
+
+/**
+ * Check if an email belongs to a superuser
+ * @param email - User email to check
+ * @returns true if the email is a superuser
+ */
+export function isSuperuserEmail(email: string): boolean {
+  return SUPERUSER_EMAILS.includes(email.toLowerCase());
+}
+
+/**
+ * Check if a user role is superuser
+ * @param role - User role to check
+ * @returns true if the role is superuser
+ */
+export function isSuperuserRole(role?: string | null): boolean {
+  return role === "superuser";
+}
+
+/**
+ * Check if a user has superuser access
+ *
+ * Uses hierarchical verification:
+ * 1. Database role field takes precedence (if set)
+ * 2. Email list is fallback (for bootstrap/initial setup)
+ *
+ * This allows:
+ * - Initial superuser setup via environment variable
+ * - Long-term management via database role field
+ * - Clear precedence when both are present
+ *
+ * @param email - User email
+ * @param role - User role from database (optional)
+ * @returns true if the user is a superuser
+ */
+export function isSuperuser(email: string, role?: string | null): boolean {
+  // Database role takes precedence (authoritative)
+  if (role !== null && role !== undefined) {
+    return isSuperuserRole(role);
+  }
+
+  // Email list is fallback (bootstrap only)
+  return isSuperuserEmail(email);
+}
+
+/**
+ * Get the appropriate role for a user based on their email
+ * Use this during user creation/signup to set the correct role
+ * @param email - User email
+ * @returns 'superuser' if email is in superuser list, otherwise 'user'
+ */
+export function getRoleForEmail(email: string): UserRole {
+  return isSuperuserEmail(email) ? "superuser" : "user";
+}
+
+/**
+ * Superuser metadata for display purposes
+ */
+export const SUPERUSER_INFO = {
+  badge: "Superuser",
+  description: "Unlimited access to all features",
+  benefits: [
+    "Unlimited tunnel hours",
+    "Unlimited bandwidth",
+    "No rate limits",
+    "Priority support",
+    "Access to admin features",
+  ],
+} as const;

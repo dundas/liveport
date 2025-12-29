@@ -7,6 +7,9 @@
 
 import { serve } from "@hono/node-server";
 import { WebSocketServer, WebSocket } from "ws";
+import http from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Socket as NetSocket } from "node:net";
 import { fileURLToPath } from "url";
 import { createHttpHandler } from "./http-handler";
 import { handleConnection } from "./websocket-handler";
@@ -15,6 +18,8 @@ import { startMetering, stopMetering, syncMetrics } from "./metering";
 import { initializeSchema, getDatabase } from "@liveport/shared";
 import { createLogger } from "@liveport/shared/logging";
 import type { TunnelServerConfig } from "./types";
+import { createProxyConnectHandler, createProxyRequestInterceptor } from "./proxy-gateway";
+import { validateTunnelServerSecrets } from "./validate-secrets";
 
 const logger = createLogger({ service: "tunnel-server" });
 
@@ -42,7 +47,19 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
   console.log("=".repeat(50));
   console.log("LivePort Tunnel Server");
   console.log("=".repeat(50));
-  
+
+  // Validate secrets before proceeding
+  try {
+    console.log("🔐 Validating secrets...");
+    validateTunnelServerSecrets();
+    console.log("✅ All secrets validated successfully");
+  } catch (error) {
+    console.error("❌ Secret validation failed:");
+    console.error(error instanceof Error ? error.message : String(error));
+    console.error("\nTunnel server will not start until secrets are properly configured.");
+    process.exit(1);
+  }
+
   // Initialize database schema
   try {
     console.log("Initializing database schema...");
@@ -71,12 +88,63 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
     requestTimeout: cfg.requestTimeout,
   });
 
+  const proxyEnabled = process.env.PROXY_GATEWAY_ENABLED === "true";
+  const proxyTokenSecret = process.env.PROXY_TOKEN_SECRET || "";
+
+  // Validate proxy allowlist when proxy is enabled
+  if (proxyEnabled) {
+    // Require proxy allowlist (default-open is a security vulnerability)
+    const hasAllowedHosts = !!process.env.PROXY_ALLOWED_HOSTS;
+    const hasAllowedDomains = !!process.env.PROXY_ALLOWED_DOMAINS;
+
+    if (!hasAllowedHosts && !hasAllowedDomains) {
+      console.error("❌ PROXY_ALLOWED_HOSTS or PROXY_ALLOWED_DOMAINS must be set when PROXY_GATEWAY_ENABLED=true");
+      console.error("   Refusing to start with default-open proxy (SSRF vulnerability risk)");
+      console.error("   Set allowlist with one of:");
+      console.error("   - PROXY_ALLOWED_HOSTS=api.openai.com,api.anthropic.com");
+      console.error("   - PROXY_ALLOWED_DOMAINS=.openai.com,.anthropic.com");
+      process.exit(1);
+    }
+  }
+
+  const proxyConfig = {
+    enabled: proxyEnabled,
+    tokenSecret: proxyTokenSecret,
+    requestTimeoutMs: parseInt(process.env.PROXY_GATEWAY_TIMEOUT_MS || "30000", 10),
+  };
+
+  const proxyInterceptor = createProxyRequestInterceptor(proxyConfig);
+  const proxyConnectHandler = createProxyConnectHandler(proxyConfig);
+
   // Start HTTP server
   const server = serve(
     {
       fetch: httpApp.fetch,
       port: cfg.port,
       hostname: cfg.host,
+      createServer: ((serverOptions?: unknown, requestListener?: unknown) => {
+        const options = (serverOptions && typeof serverOptions === "object" ? serverOptions : {}) as http.ServerOptions;
+        const listener = requestListener as ((req: IncomingMessage, res: ServerResponse) => void) | undefined;
+
+        const srv = http.createServer(options, (req, res) => {
+          if (!listener) {
+            res.statusCode = 500;
+            res.end("Server misconfigured");
+            return;
+          }
+          void proxyInterceptor(req, res, async (r, s) => {
+            await listener(r, s);
+          });
+        });
+
+        srv.on("connect", (req, socket, head) => {
+          proxyConnectHandler(req, socket as unknown as NetSocket, head).catch(() => {
+            (socket as unknown as NetSocket).destroy();
+          });
+        });
+
+        return srv;
+      }) as unknown as typeof http.createServer,
     },
     (info) => {
       console.log(`HTTP server listening on http://${cfg.host}:${info.port}`);

@@ -91,40 +91,38 @@ export async function POST(request: NextRequest) {
     // Calculate expiration from expiresIn string or expiresInDays number
     let expiresAt: Date | undefined;
     if (expiresIn) {
-      const match = expiresIn.match(/^(\d+)(h|d)$/);
-      if (!match) {
-        return NextResponse.json(
-          { error: "Invalid expiresIn format. Use format like '6h' or '7d'" },
-          { status: 400 }
-        );
+      // Check if user selected "never" for unlimited/never-expiring keys
+      if (expiresIn === 'never') {
+        expiresAt = undefined; // null expiration = never expires
+      } else {
+        const match = expiresIn.match(/^(\d+)(h|d)$/);
+        if (!match) {
+          return NextResponse.json(
+            { error: "Invalid expiresIn format. Use format like '6h', '7d', or 'never'" },
+            { status: 400 }
+          );
+        }
+        const value = parseInt(match[1], 10);
+        const unit = match[2];
+
+        // Validate minimum values (no maximum limit)
+        if (value <= 0) {
+          return NextResponse.json(
+            { error: "Expiration value must be greater than 0" },
+            { status: 400 }
+          );
+        }
+
+        const ms = unit === 'h'
+          ? value * 60 * 60 * 1000
+          : value * 24 * 60 * 60 * 1000;
+        expiresAt = new Date(Date.now() + ms);
       }
-      const value = parseInt(match[1], 10);
-      const unit = match[2];
-      
-      // Validate reasonable ranges (max 1 year)
-      const maxHours = 8760; // 365 days
-      const maxDays = 365;
-      if (unit === 'h' && (value <= 0 || value > maxHours)) {
-        return NextResponse.json(
-          { error: `Hours must be between 1 and ${maxHours}` },
-          { status: 400 }
-        );
-      }
-      if (unit === 'd' && (value <= 0 || value > maxDays)) {
-        return NextResponse.json(
-          { error: `Days must be between 1 and ${maxDays}` },
-          { status: 400 }
-        );
-      }
-      
-      const ms = unit === 'h' 
-        ? value * 60 * 60 * 1000 
-        : value * 24 * 60 * 60 * 1000;
-      expiresAt = new Date(Date.now() + ms);
     } else if (expiresInDays) {
-      if (expiresInDays <= 0 || expiresInDays > 365) {
+      // No maximum limit for days - allow any positive number
+      if (expiresInDays <= 0) {
         return NextResponse.json(
-          { error: "expiresInDays must be between 1 and 365" },
+          { error: "expiresInDays must be greater than 0" },
           { status: 400 }
         );
       }
@@ -147,6 +145,16 @@ export async function POST(request: NextRequest) {
       maxUses: maxUses || undefined,
       allowedPort: allowedPort || undefined,
     });
+
+    // Audit log for never-expiring keys
+    if (expiresIn === 'never') {
+      logger.warn({
+        userId: session.user.id,
+        email: session.user.email,
+        keyName: name,
+        action: 'create_never_expiring_key',
+      }, 'User created never-expiring bridge key');
+    }
 
     // Return the full key ONCE (it will never be shown again)
     return NextResponse.json({

@@ -10,6 +10,8 @@ import { nanoid } from "nanoid";
 import { getConnectionManager } from "./connection-manager";
 import { getMeteringHealth } from "./metering";
 import { createLogger } from "@liveport/shared/logging";
+import { BridgeKeyRepository, getDatabase } from "@liveport/shared";
+import { signProxyToken, type ProxyProviderId } from "./proxy-token";
 import type { HttpRequestMessage, HttpResponsePayload } from "./types";
 
 const logger = createLogger({ service: "tunnel-server:http" });
@@ -59,6 +61,7 @@ function headersToObject(headers: Headers): Record<string, string> {
   headers.forEach((value, key) => {
     result[key.toLowerCase()] = value;
   });
+
   return result;
 }
 
@@ -108,7 +111,10 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
 
     // Validate internal API secret
     const expectedSecret = process.env.INTERNAL_API_SECRET;
-    if (expectedSecret && apiSecret !== expectedSecret) {
+    if (!expectedSecret) {
+      return c.json({ error: "Internal server error: INTERNAL_API_SECRET not configured" }, 500);
+    }
+    if (apiSecret !== expectedSecret) {
       return c.json({ error: "Unauthorized" }, 401);
     }
 
@@ -127,6 +133,90 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
         requestCount: t.requestCount,
       })),
     });
+  });
+
+  app.post("/api/proxy/token", async (c) => {
+    const apiSecret = c.req.header("x-api-secret");
+
+    const expectedSecret = process.env.INTERNAL_API_SECRET;
+    if (!expectedSecret) {
+      return c.json({ error: "Internal server error: INTERNAL_API_SECRET not configured" }, 500);
+    }
+    if (apiSecret !== expectedSecret) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const secret = process.env.PROXY_TOKEN_SECRET;
+    if (!secret) {
+      return c.json({ error: "Proxy token secret not configured" }, 500);
+    }
+
+    const body = (await c.req.json().catch(() => null)) as
+      | {
+          keyId?: string;
+          provider?: ProxyProviderId;
+          providerOptions?: Record<string, unknown>;
+          ttlSeconds?: number;
+        }
+      | null;
+
+    if (!body?.keyId) {
+      return c.json({ error: "Missing keyId" }, 400);
+    }
+
+    // Token expiration time (in seconds)
+    // Default: 600 seconds (10 minutes)
+    // Min: 30 seconds
+    // Max: 3600 seconds (1 hour)
+    const ttlSecondsRaw = body.ttlSeconds;
+    const ttlSeconds = Math.min(
+      Math.max(typeof ttlSecondsRaw === "number" ? Math.floor(ttlSecondsRaw) : 600, 30),
+      3600
+    );
+
+    const provider = body.provider || ((process.env.PROXY_DEFAULT_PROVIDER || "oxylabs") as ProxyProviderId);
+    const providerOptions = body.providerOptions || {};
+
+    try {
+      const db = getDatabase();
+      const repo = new BridgeKeyRepository(db);
+      const key = await repo.findById(body.keyId);
+
+      if (!key) {
+        return c.json({ error: "Key not found" }, 404);
+      }
+
+      if (key.status !== "active") {
+        return c.json({ error: `Key is ${key.status}` }, 403);
+      }
+
+      if (key.expiresAt && key.expiresAt < new Date()) {
+        return c.json({ error: "Key expired" }, 403);
+      }
+
+      const now = Date.now();
+      const exp = now + ttlSeconds * 1000;
+      const token = await signProxyToken(
+        {
+          keyId: key.id,
+          userId: key.userId,
+          iat: now,
+          exp,
+          provider,
+          providerOptions,
+        },
+        secret
+      );
+
+      return c.json({
+        token,
+        expiresAt: new Date(exp).toISOString(),
+        provider,
+      });
+    } catch (err) {
+      logger.error({ err }, "Failed to mint proxy token");
+      return c.json({ error: "Failed to mint proxy token" }, 500);
+    }
   });
 
   // Catch-all handler for proxied requests
