@@ -35,6 +35,8 @@ const mocks = vi.hoisted(() => {
     incrementRequestCount: vi.fn(),
     registerPendingRequest: vi.fn(),
     addBytesTransferred: vi.fn(),
+    getWebSocketCount: vi.fn(),
+    waitForWebSocketUpgrade: vi.fn(),
   };
 
   const logger = {
@@ -68,7 +70,7 @@ vi.mock("./metering", () => ({
   })),
 }));
 
-import { createHttpHandler } from "./http-handler";
+import { createHttpHandler, isWebSocketUpgrade } from "./http-handler";
 
 describe("HTTP Handler", () => {
   let app: Hono;
@@ -229,6 +231,227 @@ describe("HTTP Handler", () => {
         error: "Gateway Timeout",
         message: "Request to local server timed out",
       }));
+    });
+  });
+
+  describe("WebSocket Upgrade Detection", () => {
+    describe("isWebSocketUpgrade", () => {
+      it("should return true for valid WebSocket upgrade request", () => {
+        const req = new Request("https://test-subdomain.liveport.online/ws", {
+          headers: {
+            "upgrade": "websocket",
+            "connection": "Upgrade",
+          },
+        });
+
+        expect(isWebSocketUpgrade(req)).toBe(true);
+      });
+
+      it("should return false for regular HTTP request", () => {
+        const req = new Request("https://test-subdomain.liveport.online/api", {
+          headers: {
+            "content-type": "application/json",
+          },
+        });
+
+        expect(isWebSocketUpgrade(req)).toBe(false);
+      });
+
+      it("should be case-insensitive for header values", () => {
+        const req1 = new Request("https://test.liveport.online/ws", {
+          headers: {
+            "upgrade": "WebSocket",
+            "connection": "upgrade",
+          },
+        });
+
+        const req2 = new Request("https://test.liveport.online/ws", {
+          headers: {
+            "upgrade": "WEBSOCKET",
+            "connection": "UPGRADE",
+          },
+        });
+
+        expect(isWebSocketUpgrade(req1)).toBe(true);
+        expect(isWebSocketUpgrade(req2)).toBe(true);
+      });
+
+      it("should handle connection header with multiple values", () => {
+        const req = new Request("https://test.liveport.online/ws", {
+          headers: {
+            "upgrade": "websocket",
+            "connection": "keep-alive, Upgrade",
+          },
+        });
+
+        expect(isWebSocketUpgrade(req)).toBe(true);
+      });
+
+      it("should return false when upgrade header is missing", () => {
+        const req = new Request("https://test.liveport.online/api", {
+          headers: {
+            "connection": "Upgrade",
+          },
+        });
+
+        expect(isWebSocketUpgrade(req)).toBe(false);
+      });
+
+      it("should return false when connection header is missing", () => {
+        const req = new Request("https://test.liveport.online/api", {
+          headers: {
+            "upgrade": "websocket",
+          },
+        });
+
+        expect(isWebSocketUpgrade(req)).toBe(false);
+      });
+
+      it("should return false when upgrade is not websocket", () => {
+        const req = new Request("https://test.liveport.online/api", {
+          headers: {
+            "upgrade": "h2c",
+            "connection": "Upgrade",
+          },
+        });
+
+        expect(isWebSocketUpgrade(req)).toBe(false);
+      });
+    });
+
+    describe("handleWebSocketUpgrade", () => {
+      it("should return 404 for invalid subdomain", async () => {
+        const req = new Request("https://liveport.online/ws", {
+          headers: {
+            "host": "liveport.online",
+            "upgrade": "websocket",
+            "connection": "Upgrade",
+          },
+        });
+
+        const res = await app.request(req);
+        expect(res.status).toBe(404);
+        expect(await res.text()).toContain("Invalid tunnel URL");
+      });
+
+      it("should return 502 for inactive tunnel", async () => {
+        mocks.connectionManager.findBySubdomain.mockReturnValue(null);
+
+        const req = new Request("https://test-subdomain.liveport.online/ws", {
+          headers: {
+            "host": "test-subdomain.liveport.online",
+            "upgrade": "websocket",
+            "connection": "Upgrade",
+          },
+        });
+
+        const res = await app.request(req);
+        expect(res.status).toBe(502);
+        expect(await res.text()).toContain("Tunnel not found or inactive");
+      });
+
+      it("should return 503 when WebSocket limit reached", async () => {
+        mocks.connectionManager.findBySubdomain.mockReturnValue(mocks.connection);
+        mocks.connectionManager.getWebSocketCount.mockReturnValue(100);
+
+        const req = new Request("https://test-subdomain.liveport.online/ws", {
+          headers: {
+            "host": "test-subdomain.liveport.online",
+            "upgrade": "websocket",
+            "connection": "Upgrade",
+          },
+        });
+
+        const res = await app.request(req);
+        expect(res.status).toBe(503);
+        expect(await res.text()).toContain("Maximum WebSocket connections exceeded");
+      });
+
+      it("should send upgrade message to CLI", async () => {
+        mocks.connectionManager.findBySubdomain.mockReturnValue(mocks.connection);
+        mocks.connectionManager.getWebSocketCount.mockReturnValue(0);
+        mocks.connectionManager.waitForWebSocketUpgrade.mockResolvedValue({
+          type: "websocket_upgrade_response",
+          id: "test-subdomain:ws:abc123",
+          timestamp: Date.now(),
+          payload: {
+            accepted: true,
+            statusCode: 101,
+          },
+        });
+
+        const req = new Request("https://test-subdomain.liveport.online/ws", {
+          headers: {
+            "host": "test-subdomain.liveport.online",
+            "upgrade": "websocket",
+            "connection": "Upgrade",
+            "sec-websocket-key": "test-key",
+            "sec-websocket-version": "13",
+          },
+        });
+
+        const res = await app.request(req);
+
+        expect(mocks.socket.send).toHaveBeenCalled();
+        const sentMessage = JSON.parse(mocks.socket.send.mock.calls[0][0]);
+        expect(sentMessage.type).toBe("websocket_upgrade");
+        expect(sentMessage.payload.path).toBe("/ws");
+        expect(sentMessage.payload.headers).toBeDefined();
+        expect(sentMessage.payload.headers["sec-websocket-key"]).toBe("test-key");
+      });
+
+      it("should return rejection status when CLI rejects upgrade", async () => {
+        mocks.connectionManager.findBySubdomain.mockReturnValue(mocks.connection);
+        mocks.connectionManager.getWebSocketCount.mockReturnValue(0);
+        mocks.connectionManager.waitForWebSocketUpgrade.mockResolvedValue({
+          type: "websocket_upgrade_response",
+          id: "test-subdomain:ws:abc123",
+          timestamp: Date.now(),
+          payload: {
+            accepted: false,
+            statusCode: 502,
+            reason: "Failed to connect to local server",
+          },
+        });
+
+        const req = new Request("https://test-subdomain.liveport.online/ws", {
+          headers: {
+            "host": "test-subdomain.liveport.online",
+            "upgrade": "websocket",
+            "connection": "Upgrade",
+          },
+        });
+
+        const res = await app.request(req);
+        expect(res.status).toBe(502);
+        expect(await res.text()).toContain("Failed to connect to local server");
+      });
+
+      it("should return 501 when upgrade is accepted (handled at HTTP server level)", async () => {
+        mocks.connectionManager.findBySubdomain.mockReturnValue(mocks.connection);
+        mocks.connectionManager.getWebSocketCount.mockReturnValue(0);
+        mocks.connectionManager.waitForWebSocketUpgrade.mockResolvedValue({
+          type: "websocket_upgrade_response",
+          id: "test-subdomain:ws:abc123",
+          timestamp: Date.now(),
+          payload: {
+            accepted: true,
+            statusCode: 101,
+          },
+        });
+
+        const req = new Request("https://test-subdomain.liveport.online/ws", {
+          headers: {
+            "host": "test-subdomain.liveport.online",
+            "upgrade": "websocket",
+            "connection": "Upgrade",
+          },
+        });
+
+        const res = await app.request(req);
+        expect(res.status).toBe(501);
+        expect(await res.text()).toContain("Upgrade will be handled at HTTP server level");
+      });
     });
   });
 });

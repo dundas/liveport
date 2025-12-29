@@ -6,13 +6,19 @@
  */
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { nanoid } from "nanoid";
 import { getConnectionManager } from "./connection-manager";
 import { getMeteringHealth } from "./metering";
 import { createLogger } from "@liveport/shared/logging";
 import { BridgeKeyRepository, getDatabase } from "@liveport/shared";
 import { signProxyToken, type ProxyProviderId } from "./proxy-token";
-import type { HttpRequestMessage, HttpResponsePayload } from "./types";
+import type {
+  HttpRequestMessage,
+  HttpResponsePayload,
+  WebSocketUpgradeMessage,
+} from "./types";
+import { MAX_WEBSOCKETS_PER_TUNNEL } from "./types";
 
 const logger = createLogger({ service: "tunnel-server:http" });
 
@@ -63,6 +69,129 @@ function headersToObject(headers: Headers): Record<string, string> {
   });
 
   return result;
+}
+
+/**
+ * Check if request is a WebSocket upgrade request
+ */
+export function isWebSocketUpgrade(request: Request): boolean {
+  const upgrade = request.headers.get("upgrade");
+  const connection = request.headers.get("connection");
+
+  if (!upgrade || !connection) {
+    return false;
+  }
+
+  // Check if upgrade header is "websocket" (case-insensitive)
+  if (upgrade.toLowerCase() !== "websocket") {
+    return false;
+  }
+
+  // Check if connection header contains "upgrade" (case-insensitive)
+  // Connection header can contain multiple values separated by commas
+  const connectionValues = connection.toLowerCase().split(",").map((v) => v.trim());
+  if (!connectionValues.includes("upgrade")) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Handle WebSocket upgrade request
+ */
+async function handleWebSocketUpgrade(
+  c: Context,
+  cfg: HttpHandlerConfig
+): Promise<Response> {
+  const connectionManager = getConnectionManager();
+  const host = c.req.header("host") || "";
+  const subdomain = extractSubdomain(host, cfg.baseDomain);
+
+  // If not a tunnel subdomain, return 404
+  if (!subdomain) {
+    return c.text("Invalid tunnel URL", 404);
+  }
+
+  // Find the tunnel connection
+  const connection = connectionManager.findBySubdomain(subdomain);
+
+  if (!connection) {
+    return c.text("Tunnel not found or inactive", 502);
+  }
+
+  if (connection.state !== "active") {
+    return c.text(`Tunnel is ${connection.state}`, 502);
+  }
+
+  // Check WebSocket connection limit
+  const wsCount = connectionManager.getWebSocketCount(subdomain);
+  if (wsCount >= MAX_WEBSOCKETS_PER_TUNNEL) {
+    return c.text(
+      `Maximum WebSocket connections exceeded (${MAX_WEBSOCKETS_PER_TUNNEL})`,
+      503
+    );
+  }
+
+  // Generate WebSocket connection ID
+  const wsConnId = `${subdomain}:ws:${nanoid(10)}`;
+
+  // Build upgrade message
+  const url = new URL(c.req.url);
+  const path = url.pathname + url.search;
+  const headers = headersToObject(c.req.raw.headers);
+
+  // Extract subprotocol if present
+  const subprotocol = c.req.header("sec-websocket-protocol");
+
+  const upgradeMessage: WebSocketUpgradeMessage = {
+    type: "websocket_upgrade",
+    id: wsConnId,
+    timestamp: Date.now(),
+    payload: {
+      path,
+      headers,
+      subprotocol,
+    },
+  };
+
+  // Check connection state before proceeding
+  if (connection.socket.readyState !== connection.socket.OPEN) {
+    return c.text("Tunnel connection lost", 502);
+  }
+
+  // Register listener BEFORE sending message to avoid race condition
+  // (CLI could respond very quickly, before waitForWebSocketUpgrade is called)
+  const upgradePromise = connectionManager.waitForWebSocketUpgrade(wsConnId, 5000);
+
+  // Send upgrade message to CLI
+  connection.socket.send(JSON.stringify(upgradeMessage));
+
+  // Wait for CLI response (5 second timeout)
+  try {
+    const response = await upgradePromise;
+
+    if (!response.payload.accepted) {
+      // CLI rejected the upgrade
+      const reason = response.payload.reason || "Upgrade rejected";
+      return c.text(reason, response.payload.statusCode);
+    }
+
+    // CLI accepted - actual upgrade will happen at HTTP server level (Task 4.0)
+    // Return 501 (Not Implemented) to signal that actual WebSocket upgrade
+    // will be handled by the Node.js HTTP server 'upgrade' event (Task 4.0).
+    // Hono cannot handle raw socket upgrades, so we delegate to server-level handler.
+    return c.text("Upgrade will be handled at HTTP server level", 501);
+  } catch (err) {
+    const error = err as Error;
+    if (error.message === "WebSocket upgrade timeout") {
+      return c.text("WebSocket upgrade timeout", 504);
+    }
+
+    // Log unexpected errors and return generic 500
+    logger.error({ err, wsConnId }, "WebSocket upgrade failed");
+    return c.text("Internal server error", 500);
+  }
 }
 
 /**
@@ -217,6 +346,17 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
       logger.error({ err }, "Failed to mint proxy token");
       return c.json({ error: "Failed to mint proxy token" }, 500);
     }
+  });
+
+  // WebSocket upgrade detection middleware (before catch-all handler)
+  app.all("*", async (c, next) => {
+    // Check if this is a WebSocket upgrade request
+    if (isWebSocketUpgrade(c.req.raw)) {
+      return handleWebSocketUpgrade(c, cfg);
+    }
+
+    // Not a WebSocket upgrade, continue to regular HTTP handler
+    return next();
   });
 
   // Catch-all handler for proxied requests

@@ -12,7 +12,11 @@ export type MessageType =
   | "heartbeat"
   | "heartbeat_ack"
   | "http_request"
-  | "http_response";
+  | "http_response"
+  | "websocket_upgrade"
+  | "websocket_upgrade_response"
+  | "websocket_frame"
+  | "websocket_close";
 
 export interface BaseMessage {
   type: MessageType;
@@ -92,6 +96,79 @@ export interface HttpResponseMessage extends BaseMessage {
   payload: HttpResponsePayload;
 }
 
+// WebSocket Proxying Messages
+
+/**
+ * WebSocket upgrade request from tunnel server to CLI
+ */
+export interface WebSocketUpgradePayload {
+  path: string;
+  headers: Record<string, string>;
+  subprotocol?: string;
+}
+
+export interface WebSocketUpgradeMessage extends BaseMessage {
+  type: "websocket_upgrade";
+  id: string;
+  payload: WebSocketUpgradePayload;
+}
+
+/**
+ * WebSocket upgrade response from CLI to tunnel server
+ */
+export interface WebSocketUpgradeResponsePayload {
+  accepted: boolean;
+  statusCode: number;
+  headers?: Record<string, string>;
+  reason?: string;
+}
+
+export interface WebSocketUpgradeResponseMessage extends BaseMessage {
+  type: "websocket_upgrade_response";
+  id: string;
+  payload: WebSocketUpgradeResponsePayload;
+}
+
+/**
+ * WebSocket frame relayed through tunnel
+ *
+ * Opcode values:
+ * - 1: text frame
+ * - 2: binary frame
+ * - 8: close frame
+ * - 9: ping frame
+ * - 10: pong frame
+ */
+export interface WebSocketFramePayload {
+  opcode: number;
+  data: string; // Base64-encoded for binary, plain for text
+  final: boolean;
+  closeCode?: number; // Only for opcode 8 (close)
+  closeReason?: string; // Only for opcode 8 (close)
+}
+
+export interface WebSocketFrameMessage extends BaseMessage {
+  type: "websocket_frame";
+  id: string;
+  direction: "client_to_server" | "server_to_client";
+  payload: WebSocketFramePayload;
+}
+
+/**
+ * WebSocket connection closed
+ */
+export interface WebSocketClosePayload {
+  code: number;
+  reason: string;
+  initiator: "client" | "server" | "tunnel";
+}
+
+export interface WebSocketCloseMessage extends BaseMessage {
+  type: "websocket_close";
+  id: string;
+  payload: WebSocketClosePayload;
+}
+
 export type Message =
   | ConnectedMessage
   | ErrorMessage
@@ -99,7 +176,11 @@ export type Message =
   | HeartbeatMessage
   | HeartbeatAckMessage
   | HttpRequestMessage
-  | HttpResponseMessage;
+  | HttpResponseMessage
+  | WebSocketUpgradeMessage
+  | WebSocketUpgradeResponseMessage
+  | WebSocketFrameMessage
+  | WebSocketCloseMessage;
 
 // Connection state
 export type ConnectionState =
@@ -129,6 +210,16 @@ export interface TunnelConnection {
   expiresAt: Date | null; // null means never expires
 }
 
+// Proxied WebSocket connection
+export interface ProxiedWebSocket {
+  id: string;
+  subdomain: string;
+  publicSocket: WebSocket; // The public-facing WebSocket connection
+  createdAt: Date;
+  frameCount: number;
+  bytesTransferred: number;
+}
+
 // Pending request resolver
 export interface PendingRequest {
   resolve: (response: HttpResponsePayload) => void;
@@ -151,6 +242,9 @@ export interface TunnelServerConfig {
   reservedSubdomains: string[];
 }
 
+// WebSocket connection limits
+export const MAX_WEBSOCKETS_PER_TUNNEL = 100;
+
 // Error codes
 export const ErrorCodes = {
   INVALID_KEY: "INVALID_KEY",
@@ -171,6 +265,8 @@ export const CloseCodes = {
   GOING_AWAY: 1001,
   PROTOCOL_ERROR: 1002,
   UNSUPPORTED_DATA: 1003,
+  POLICY_VIOLATION: 1008,
+  MESSAGE_TOO_BIG: 1009,
   UNEXPECTED_CONDITION: 1011,
   INVALID_KEY: 4001,
   KEY_EXPIRED: 4002,
