@@ -177,7 +177,26 @@ describe("Proxy Gateway", () => {
       port: upstreamPort,
     });
 
-    const { server, port } = await startGatewayServer({ cfg });
+    // Load module with allowlist configured to allow example.com
+    const { createProxyRequestInterceptor, createProxyConnectHandler } = await loadProxyGatewayModule({
+      PROXY_ALLOWED_DOMAINS: "example.com",
+    });
+
+    const interceptor = createProxyRequestInterceptor(cfg);
+    const connectHandler = createProxyConnectHandler(cfg);
+
+    const server = http.createServer(async (req, res) => {
+      await interceptor(req, res, async (_req, _res) => {
+        _res.writeHead(404, { "Content-Type": "text/plain" });
+        _res.end("delegate");
+      });
+    });
+
+    server.on("connect", (req, clientSocket, head) => {
+      void connectHandler(req, clientSocket, head);
+    });
+
+    const port = await listenServer(server);
 
     const bridgeKey = "lpk_test123";
     const token = "tok_test";
@@ -353,7 +372,26 @@ describe("Proxy Gateway", () => {
       port: upstreamPort,
     });
 
-    const { server, port } = await startGatewayServer({ cfg });
+    // Load module with allowlist configured to allow example.com
+    const { createProxyRequestInterceptor, createProxyConnectHandler } = await loadProxyGatewayModule({
+      PROXY_ALLOWED_DOMAINS: "example.com",
+    });
+
+    const interceptor = createProxyRequestInterceptor(cfg);
+    const connectHandler = createProxyConnectHandler(cfg);
+
+    const server = http.createServer(async (req, res) => {
+      await interceptor(req, res, async (_req, _res) => {
+        _res.writeHead(404, { "Content-Type": "text/plain" });
+        _res.end("delegate");
+      });
+    });
+
+    server.on("connect", (req, clientSocket, head) => {
+      void connectHandler(req, clientSocket, head);
+    });
+
+    const port = await listenServer(server);
 
     const bridgeKey = "lpk_test123";
     const token = "tok_test";
