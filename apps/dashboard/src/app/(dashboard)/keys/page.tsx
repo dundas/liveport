@@ -28,7 +28,7 @@ interface BridgeKeyResponse {
   name: string;
   prefix: string;
   status: "active" | "revoked" | "expired";
-  expiresAt: string;
+  expiresAt: string | null;
   maxUses: number | null;
   currentUses: number;
   allowedPort: number | null;
@@ -113,12 +113,18 @@ export default function KeysPage() {
   };
 
   const getStatusBadge = (key: BridgeKeyResponse) => {
-    const now = new Date();
-    const expiresAt = new Date(key.expiresAt);
-    
     if (key.status === "revoked") {
       return <Badge variant="destructive">Revoked</Badge>;
     }
+
+    // Handle never-expiring keys (null expiresAt)
+    if (!key.expiresAt) {
+      return <Badge variant="default">Active</Badge>;
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(key.expiresAt);
+
     if (expiresAt < now) {
       return <Badge variant="secondary">Expired</Badge>;
     }
@@ -193,10 +199,16 @@ export default function KeysPage() {
                       {key.currentUses}
                       {key.maxUses ? ` / ${key.maxUses}` : ""}
                     </TableCell>
-                    <TableCell>{formatDate(key.expiresAt)}</TableCell>
+                    <TableCell>
+                      {key.expiresAt ? formatDate(key.expiresAt) : (
+                        <Badge variant="outline" className="bg-green-500/10 text-green-700">
+                          Never
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell>{formatDate(key.createdAt)}</TableCell>
                     <TableCell className="text-right space-x-1">
-                      {key.status === "active" && new Date(key.expiresAt) > new Date() && (
+                      {key.status === "active" && (!key.expiresAt || new Date(key.expiresAt) > new Date()) && (
                         <Button
                           variant="ghost"
                           size="sm"

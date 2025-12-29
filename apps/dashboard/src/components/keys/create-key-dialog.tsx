@@ -28,7 +28,7 @@ export function CreateKeyDialog({ onKeyCreated }: CreateKeyDialogProps) {
   const [copied, setCopied] = useState(false);
 
   // Form state
-  const [expiresIn, setExpiresIn] = useState<"1h" | "6h" | "24h" | "7d">("6h");
+  const [expiresIn, setExpiresIn] = useState<"1h" | "6h" | "24h" | "7d" | "30d" | "never">("6h");
   const [maxUses, setMaxUses] = useState<string>("");
   const [allowedPort, setAllowedPort] = useState<string>("");
 
@@ -123,6 +123,8 @@ export function CreateKeyDialog({ onKeyCreated }: CreateKeyDialogProps) {
                   <option value="6h">6 hours</option>
                   <option value="24h">24 hours</option>
                   <option value="7d">7 days</option>
+                  <option value="30d">30 days</option>
+                  <option value="never">Never expires</option>
                 </select>
               </div>
               <div className="space-y-2">

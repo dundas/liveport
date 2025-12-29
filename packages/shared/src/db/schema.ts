@@ -39,6 +39,7 @@ export const TABLE_NAMES = {
   BRIDGE_KEYS: "bridge_keys",
   TUNNELS: "tunnels",
   STATIC_SUBDOMAINS: "static_subdomains",
+  PROXY_USAGE_ROLLUPS: "proxy_usage_rollups",
 } as const;
 
 /**
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS "user" (
   email TEXT UNIQUE NOT NULL,
   email_verified BOOLEAN DEFAULT FALSE,
   image TEXT,
+  role TEXT DEFAULT 'user',
   tier TEXT DEFAULT 'free',
   credit_balance DECIMAL(10,2) DEFAULT 0,
   stripe_customer_id TEXT,
@@ -59,6 +61,13 @@ CREATE TABLE IF NOT EXISTS "user" (
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
+`.trim();
+
+/**
+ * Migration SQL to add role column to existing user table
+ */
+export const USER_ROLE_MIGRATION_SQL = `
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';
 `.trim();
 
 /**
@@ -219,6 +228,7 @@ export const USER_COLUMNS: ColumnDefinition[] = [
   { name: "email", type: "text", nullable: false, unique: true },
   { name: "email_verified", type: "boolean", nullable: true, defaultValue: "FALSE" },
   { name: "image", type: "text", nullable: true },
+  { name: "role", type: "text", nullable: true, defaultValue: "'user'" },
   { name: "tier", type: "text", nullable: true, defaultValue: "'free'" },
   { name: "credit_balance", type: "decimal", nullable: true, defaultValue: "0" },
   { name: "stripe_customer_id", type: "text", nullable: true },
@@ -321,6 +331,22 @@ export const STATIC_SUBDOMAINS_COLUMNS: ColumnDefinition[] = [
   { name: "status", type: "text", nullable: true, defaultValue: "'active'" },
 ];
 
+export const PROXY_USAGE_ROLLUPS_COLUMNS: ColumnDefinition[] = [
+  { name: "id", type: "text", primaryKey: true },
+  { name: "bucket_start", type: "timestamp", nullable: false },
+  { name: "user_id", type: "text", nullable: false },
+  { name: "bridge_key_id", type: "text", nullable: false },
+  { name: "provider", type: "text", nullable: false },
+  { name: "kind", type: "text", nullable: false },
+  { name: "target_host", type: "text", nullable: false },
+  { name: "target_port", type: "integer", nullable: false },
+  { name: "bytes_up", type: "bigint", nullable: true, defaultValue: "0" },
+  { name: "bytes_down", type: "bigint", nullable: true, defaultValue: "0" },
+  { name: "event_count", type: "integer", nullable: true, defaultValue: "0" },
+  { name: "created_at", type: "timestamp", nullable: true, defaultValue: "NOW()" },
+  { name: "updated_at", type: "timestamp", nullable: true, defaultValue: "NOW()" },
+];
+
 /**
  * Create a single table using the mech-storage API
  * @param db - MechStorageClient instance
@@ -384,6 +410,10 @@ export async function createStaticSubdomainsTable(db: MechStorageClient): Promis
   await createTable(db, TABLE_NAMES.STATIC_SUBDOMAINS, STATIC_SUBDOMAINS_COLUMNS);
 }
 
+export async function createProxyUsageRollupsTable(db: MechStorageClient): Promise<void> {
+  await createTable(db, TABLE_NAMES.PROXY_USAGE_ROLLUPS, PROXY_USAGE_ROLLUPS_COLUMNS);
+}
+
 /**
  * Create all Better Auth tables
  */
@@ -399,6 +429,13 @@ export async function createAuthTables(db: MechStorageClient): Promise<void> {
  */
 export async function createStripeWebhookEventsTable(db: MechStorageClient): Promise<void> {
   await db.query(STRIPE_WEBHOOK_EVENTS_SCHEMA_SQL);
+}
+
+/**
+ * Run role migration to add role column to user table
+ */
+export async function runRoleMigration(db: MechStorageClient): Promise<void> {
+  await db.query(USER_ROLE_MIGRATION_SQL);
 }
 
 /**
@@ -418,6 +455,7 @@ export async function createAllTables(db: MechStorageClient): Promise<void> {
   await createBridgeKeysTable(db);
   await createTunnelsTable(db);
   await createStaticSubdomainsTable(db);
+  await createProxyUsageRollupsTable(db);
   // Create billing tables
   await createStripeWebhookEventsTable(db);
 }
@@ -449,6 +487,7 @@ export async function checkTablesExist(
   bridgeKeys: boolean;
   tunnels: boolean;
   staticSubdomains: boolean;
+  proxyUsageRollups: boolean;
   authTablesExist: boolean;
   allExist: boolean;
 }> {
@@ -462,6 +501,7 @@ export async function checkTablesExist(
   const bridgeKeys = tableNames.has(TABLE_NAMES.BRIDGE_KEYS);
   const tunnels = tableNames.has(TABLE_NAMES.TUNNELS);
   const staticSubdomains = tableNames.has(TABLE_NAMES.STATIC_SUBDOMAINS);
+  const proxyUsageRollups = tableNames.has(TABLE_NAMES.PROXY_USAGE_ROLLUPS);
 
   const authTablesExist = user && session && account && verification;
 
@@ -473,8 +513,9 @@ export async function checkTablesExist(
     bridgeKeys,
     tunnels,
     staticSubdomains,
+    proxyUsageRollups,
     authTablesExist,
-    allExist: authTablesExist && bridgeKeys && tunnels && staticSubdomains,
+    allExist: authTablesExist && bridgeKeys && tunnels && staticSubdomains && proxyUsageRollups,
   };
 }
 
@@ -488,6 +529,7 @@ export async function initializeSchema(
   bridgeKeysCreated: boolean;
   tunnelsCreated: boolean;
   staticSubdomainsCreated: boolean;
+  proxyUsageRollupsCreated: boolean;
 }> {
   const status = await checkTablesExist(db);
   const result = {
@@ -495,6 +537,7 @@ export async function initializeSchema(
     bridgeKeysCreated: false,
     tunnelsCreated: false,
     staticSubdomainsCreated: false,
+    proxyUsageRollupsCreated: false,
   };
 
   if (!status.authTablesExist) {
@@ -515,6 +558,11 @@ export async function initializeSchema(
   if (!status.staticSubdomains) {
     await createStaticSubdomainsTable(db);
     result.staticSubdomainsCreated = true;
+  }
+
+  if (!status.proxyUsageRollups) {
+    await createProxyUsageRollupsTable(db);
+    result.proxyUsageRollupsCreated = true;
   }
 
   return result;
