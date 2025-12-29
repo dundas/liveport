@@ -146,6 +146,16 @@ export async function POST(request: NextRequest) {
       allowedPort: allowedPort || undefined,
     });
 
+    // Audit log for never-expiring keys
+    if (expiresIn === 'never') {
+      logger.warn({
+        userId: session.user.id,
+        email: session.user.email,
+        keyName: name,
+        action: 'create_never_expiring_key',
+      }, 'User created never-expiring bridge key');
+    }
+
     // Return the full key ONCE (it will never be shown again)
     return NextResponse.json({
       key: rawKey, // Only returned on creation!
