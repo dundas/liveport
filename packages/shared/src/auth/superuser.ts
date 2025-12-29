@@ -9,14 +9,17 @@
  * Format: SUPERUSER_EMAILS=email1@example.com,email2@example.com
  * These users bypass all rate limits, billing checks, and restrictions
  *
- * Defaults to git@davidddundas.com if not set for backward compatibility
+ * Returns empty array if SUPERUSER_EMAILS is not set
  */
 function getSuperuserEmails(): string[] {
   const envEmails = process.env.SUPERUSER_EMAILS;
 
-  // If not set, use default superuser email for backward compatibility
+  // If not set, return empty array and log error
   if (!envEmails) {
-    return ['git@davidddundas.com'];
+    console.error('❌ SUPERUSER_EMAILS environment variable is not set');
+    console.error('   No superuser access will be granted');
+    console.error('   Set SUPERUSER_EMAILS=email1@example.com,email2@example.com');
+    return [];
   }
 
   return envEmails
