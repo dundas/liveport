@@ -352,6 +352,74 @@ describe("Proxy Gateway", () => {
     upstreamProxy.close();
   });
 
+  it("should deny all requests when allowlist is empty (fail-safe)", async () => {
+    const upstream = http.createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("ok");
+    });
+    const upstreamPort = await listenServer(upstream);
+
+    resolveUpstreamProxyFromClaims.mockReturnValue({
+      host: "127.0.0.1",
+      port: upstreamPort,
+    });
+
+    // Load module with NO allowlist configured
+    const { createProxyRequestInterceptor } = await loadProxyGatewayModule({
+      PROXY_ALLOWED_HOSTS: "",
+      PROXY_ALLOWED_DOMAINS: "",
+    });
+
+    const interceptor = createProxyRequestInterceptor(cfg);
+
+    const server = http.createServer(async (req, res) => {
+      await interceptor(req, res, async (_req, _res) => {
+        _res.writeHead(404);
+        _res.end();
+      });
+    });
+
+    const port = await listenServer(server);
+
+    const bridgeKey = "lpk_test123";
+    const token = "tok_test";
+
+    const response = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port,
+          method: "GET",
+          path: "http://example.com/",
+          headers: {
+            "Proxy-Authorization": basicAuthHeader(bridgeKey, token),
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode || 0));
+        }
+      );
+      req.on("error", reject);
+      req.end();
+    });
+
+    expect(response).toBe(403);
+
+    // Verify fail-safe error was logged
+    const errorCalls = logger.error.mock.calls;
+    expect(errorCalls.some((c) =>
+      c[1]?.includes("empty allowlist") || c[1]?.includes("fail-safe")
+    )).toBe(true);
+
+    // Verify no usage was logged
+    const usageCalls = logger.info.mock.calls.filter((c) => c[1] === "proxy_usage");
+    expect(usageCalls.length).toBe(0);
+
+    server.close();
+    upstream.close();
+  });
+
   it("should establish CONNECT tunnel and emit proxy_usage log", async () => {
     const upstreamProxy = net.createServer((socket) => {
       let didHandshake = false;
@@ -434,14 +502,15 @@ describe("Proxy Gateway", () => {
 
     expect(echoed).toBe("ping");
 
-    // allow close handlers to run
-    await new Promise((r) => setTimeout(r, 0));
+    // Close servers first to trigger socket cleanup
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise<void>((resolve) => upstreamProxy.close(() => resolve()));
+
+    // Give more time for close handlers to run and emit usage logs
+    await new Promise((r) => setTimeout(r, 100));
 
     const usageCalls = logger.info.mock.calls.filter((c) => c[1] === "proxy_usage");
     expect(usageCalls.length).toBeGreaterThan(0);
     expect(usageCalls.some((c) => c[0]?.kind === "connect" && c[0]?.targetHost === "example.com")).toBe(true);
-
-    server.close();
-    upstreamProxy.close();
   });
 });
