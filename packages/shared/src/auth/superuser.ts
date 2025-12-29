@@ -8,9 +8,17 @@
  * Get superuser emails from environment variable
  * Format: SUPERUSER_EMAILS=email1@example.com,email2@example.com
  * These users bypass all rate limits, billing checks, and restrictions
+ *
+ * Defaults to git@davidddundas.com if not set for backward compatibility
  */
 function getSuperuserEmails(): string[] {
-  const envEmails = process.env.SUPERUSER_EMAILS || '';
+  const envEmails = process.env.SUPERUSER_EMAILS;
+
+  // If not set, use default superuser email for backward compatibility
+  if (!envEmails) {
+    return ['git@davidddundas.com'];
+  }
+
   return envEmails
     .split(',')
     .map(email => email.trim().toLowerCase())
