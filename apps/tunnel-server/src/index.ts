@@ -90,15 +90,17 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
       process.exit(1);
     }
 
-    // Warn if no proxy allowlist is configured (default-open is dangerous)
+    // Require proxy allowlist (default-open is a security vulnerability)
     const hasAllowedHosts = !!process.env.PROXY_ALLOWED_HOSTS;
     const hasAllowedDomains = !!process.env.PROXY_ALLOWED_DOMAINS;
 
     if (!hasAllowedHosts && !hasAllowedDomains) {
-      console.warn("⚠️  WARNING: Proxy gateway is running without an allowlist!");
-      console.warn("   PROXY_ALLOWED_HOSTS and PROXY_ALLOWED_DOMAINS are not set");
-      console.warn("   This allows proxying to ANY destination - potential security risk");
-      console.warn("   Set PROXY_ALLOWED_HOSTS or PROXY_ALLOWED_DOMAINS to restrict targets");
+      console.error("❌ PROXY_ALLOWED_HOSTS or PROXY_ALLOWED_DOMAINS must be set when PROXY_GATEWAY_ENABLED=true");
+      console.error("   Refusing to start with default-open proxy (SSRF vulnerability risk)");
+      console.error("   Set allowlist with one of:");
+      console.error("   - PROXY_ALLOWED_HOSTS=api.openai.com,api.anthropic.com");
+      console.error("   - PROXY_ALLOWED_DOMAINS=.openai.com,.anthropic.com");
+      process.exit(1);
     }
   }
 
