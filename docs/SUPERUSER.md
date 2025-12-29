@@ -28,6 +28,32 @@ Users have a `role` field in the database:
 
 The role is automatically assigned during signup based on the email address, but can also be manually set in the database.
 
+## Superuser Verification Hierarchy
+
+LivePort uses a hierarchical approach for superuser verification:
+
+### 1. Database Role (Primary)
+If the user has a `role` field set in the database:
+- `role = "superuser"` → User is a superuser
+- `role = "user"` → User is NOT a superuser (even if in email list)
+- Database role is the authoritative source
+
+### 2. Email List (Fallback)
+If the user has NO `role` field set in the database:
+- Check if email is in `SUPERUSER_EMAILS` environment variable
+- Used for initial superuser setup before database access
+
+### Best Practice
+1. Use `SUPERUSER_EMAILS` for initial setup
+2. Run migration to set database role
+3. Manage superusers via database role field going forward
+4. Email list remains as fallback for bootstrap
+
+This hierarchy provides:
+- Clear precedence (database wins)
+- Bootstrap capability (email list)
+- Long-term manageability (database)
+
 ## Usage in API Routes
 
 ### Basic Superuser Check

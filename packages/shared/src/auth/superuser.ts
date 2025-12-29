@@ -55,13 +55,28 @@ export function isSuperuserRole(role?: string | null): boolean {
 
 /**
  * Check if a user has superuser access
- * This checks both the role field AND the hardcoded email list
+ *
+ * Uses hierarchical verification:
+ * 1. Database role field takes precedence (if set)
+ * 2. Email list is fallback (for bootstrap/initial setup)
+ *
+ * This allows:
+ * - Initial superuser setup via environment variable
+ * - Long-term management via database role field
+ * - Clear precedence when both are present
+ *
  * @param email - User email
  * @param role - User role from database (optional)
  * @returns true if the user is a superuser
  */
 export function isSuperuser(email: string, role?: string | null): boolean {
-  return isSuperuserRole(role) || isSuperuserEmail(email);
+  // Database role takes precedence (authoritative)
+  if (role !== null && role !== undefined) {
+    return isSuperuserRole(role);
+  }
+
+  // Email list is fallback (bootstrap only)
+  return isSuperuserEmail(email);
 }
 
 /**
