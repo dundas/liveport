@@ -4,9 +4,9 @@ import { headers } from "next/headers";
 import { isUserSuperuser } from "@/lib/superuser";
 
 /**
- * Block a user (admin only)
+ * Get user details (admin only)
  */
-export async function POST(
+export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -21,11 +21,10 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden - Superuser access required" }, { status: 403 });
   }
 
-  // TODO: Implement user blocking logic
   const { id: userId } = await params;
 
   return NextResponse.json(
-    { message: "User blocking not yet implemented", userId },
+    { message: "User details endpoint not yet implemented", userId },
     { status: 501 }
   );
 }

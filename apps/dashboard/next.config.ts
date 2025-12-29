@@ -4,11 +4,6 @@ import { withSentryConfig } from "@sentry/nextjs";
 const nextConfig: NextConfig = {
   output: "standalone",
 
-  // Enable instrumentation for startup validation
-  experimental: {
-    instrumentationHook: true,
-  },
-
   // Externalize Node.js packages that shouldn't be bundled
   serverExternalPackages: [
     "@liveport/shared",

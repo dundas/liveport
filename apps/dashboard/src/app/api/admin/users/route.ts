@@ -4,12 +4,9 @@ import { headers } from "next/headers";
 import { isUserSuperuser } from "@/lib/superuser";
 
 /**
- * Block a user (admin only)
+ * List all users (admin only)
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest) {
   const headersList = await headers();
   const session = await auth.api.getSession({ headers: headersList });
 
@@ -21,11 +18,8 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden - Superuser access required" }, { status: 403 });
   }
 
-  // TODO: Implement user blocking logic
-  const { id: userId } = await params;
-
   return NextResponse.json(
-    { message: "User blocking not yet implemented", userId },
+    { message: "User listing not yet implemented", users: [] },
     { status: 501 }
   );
 }
