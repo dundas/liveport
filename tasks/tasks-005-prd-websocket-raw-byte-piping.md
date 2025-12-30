@@ -64,31 +64,31 @@
   - [x] 2.5 Update error logging to reflect raw byte relay approach
     - Change log messages from "frame relay" to "byte relay"
 
-- [ ] 3.0 Refactor CLI for TCP Connection Handling
-  - [ ] 3.1 Import `net` module in `packages/cli/src/websocket-handler.ts` (line 8)
+- [x] 3.0 Refactor CLI for TCP Connection Handling
+  - [x] 3.1 Import `net` module in `packages/cli/src/websocket-handler.ts` (line 8)
     - Add `import net from "net"`
-  - [ ] 3.2 Update `LocalWebSocketConnection` interface (lines 21-27)
+  - [x] 3.2 Update `LocalWebSocketConnection` interface (lines 21-27)
     - Rename `localSocket: WebSocket` to `localSocket: net.Socket`
     - Update type from `WebSocket` to `net.Socket`
-  - [ ] 3.3 Refactor `handleUpgrade()` to create TCP connection (lines 47-120)
+  - [x] 3.3 Refactor `handleUpgrade()` to create TCP connection (lines 47-120)
     - Replace `new WebSocket(localUrl, {...})` with `net.connect(port, host)`
     - Parse port from `this.localPort`
     - Wait for 'connect' event instead of 'open'
     - Manually send HTTP upgrade request via `socket.write()`
     - Parse upgrade response headers from socket data
     - Extract HTTP status code to validate upgrade success
-  - [ ] 3.4 Update `setupLocalSocketHandlers()` for TCP socket events (lines 125-151)
+  - [x] 3.4 Update `setupLocalSocketHandlers()` for TCP socket events (lines 125-151)
     - Replace `localSocket.on("message")` with `localSocket.on("data")`
     - Read raw bytes, encode as base64
     - Send `WebSocketDataMessage` to tunnel server
     - Remove ping/pong handlers (no longer needed)
     - Keep 'close' and 'error' handlers
-  - [ ] 3.5 Refactor `handleFrame()` to `handleData()` for raw bytes (lines 237-278)
+  - [x] 3.5 Refactor `handleFrame()` to `handleData()` for raw bytes (lines 237-278)
     - Rename method to `handleData(message: WebSocketDataMessage)`
     - Remove opcode-based logic (no more frame parsing)
     - Decode base64 to Buffer
     - Write raw bytes to `localSocket` via `localSocket.write(buffer)`
-  - [ ] 3.6 Remove obsolete `handleLocalMessage()` and `handleLocalFrame()` methods
+  - [x] 3.6 Remove obsolete `handleLocalMessage()` and `handleLocalFrame()` methods
     - These parsed frames, no longer needed with raw byte piping
     - Replace with simple base64 encoding of raw socket data
 
