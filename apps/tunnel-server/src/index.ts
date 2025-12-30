@@ -146,6 +146,11 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
 
         // Handle WebSocket upgrade requests for public clients
         srv.on("upgrade", (req, socket, head) => {
+          // Skip /connect path - it's handled by the dedicated WebSocketServer
+          if (req.url === "/connect" || req.url?.startsWith("/connect?")) {
+            return; // Let WebSocketServer handle it
+          }
+
           const connectionManager = getConnectionManager();
           handleWebSocketUpgradeEvent(
             req,
