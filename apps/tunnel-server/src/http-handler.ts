@@ -39,7 +39,7 @@ const defaultConfig: HttpHandlerConfig = {
 /**
  * Extract subdomain from Host header
  */
-function extractSubdomain(host: string, baseDomain: string): string | null {
+export function extractSubdomain(host: string, baseDomain: string): string | null {
   // Remove port if present
   const hostWithoutPort = host.split(":")[0];
 
@@ -174,7 +174,12 @@ async function handleWebSocketUpgrade(
     if (!response.payload.accepted) {
       // CLI rejected the upgrade
       const reason = response.payload.reason || "Upgrade rejected";
-      return c.text(reason, response.payload.statusCode);
+      // Validate status code (must be 100-599) and coerce to safe value
+      const statusCode =
+        response.payload.statusCode >= 100 && response.payload.statusCode < 600
+          ? response.payload.statusCode
+          : 502; // Default to Bad Gateway if invalid
+      return c.text(reason, statusCode as any);
     }
 
     // CLI accepted - actual upgrade will happen at HTTP server level (Task 4.0)

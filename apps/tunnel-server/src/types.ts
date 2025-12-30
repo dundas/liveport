@@ -244,6 +244,7 @@ export interface TunnelServerConfig {
 
 // WebSocket connection limits
 export const MAX_WEBSOCKETS_PER_TUNNEL = 100;
+export const MAX_FRAME_SIZE = 10 * 1024 * 1024; // 10MB
 
 // Error codes
 export const ErrorCodes = {

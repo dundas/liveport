@@ -506,6 +506,15 @@ export class ConnectionManager {
       `[ConnectionManager] Closed ${wsToClose.length} WebSocket(s) for tunnel: ${subdomain}`
     );
   }
+
+  /**
+   * Get a proxied WebSocket connection by ID
+   * @param id - WebSocket connection ID
+   * @returns ProxiedWebSocket or null if not found
+   */
+  getProxiedWebSocket(id: string): ProxiedWebSocket | null {
+    return this.proxiedWebSockets.get(id) || null;
+  }
 }
 
 // Singleton instance

@@ -20,6 +20,7 @@ import { createLogger } from "@liveport/shared/logging";
 import type { TunnelServerConfig } from "./types";
 import { createProxyConnectHandler, createProxyRequestInterceptor } from "./proxy-gateway";
 import { validateTunnelServerSecrets } from "./validate-secrets";
+import { handleWebSocketUpgradeEvent } from "./websocket-proxy";
 
 const logger = createLogger({ service: "tunnel-server" });
 
@@ -141,6 +142,18 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
           proxyConnectHandler(req, socket as unknown as NetSocket, head).catch(() => {
             (socket as unknown as NetSocket).destroy();
           });
+        });
+
+        // Handle WebSocket upgrade requests for public clients
+        srv.on("upgrade", (req, socket, head) => {
+          const connectionManager = getConnectionManager();
+          handleWebSocketUpgradeEvent(
+            req,
+            socket as unknown as NetSocket,
+            head,
+            connectionManager,
+            cfg.baseDomain
+          );
         });
 
         return srv;

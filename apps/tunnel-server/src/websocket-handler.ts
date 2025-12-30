@@ -13,6 +13,9 @@ import type {
   HeartbeatMessage,
   HeartbeatAckMessage,
   HttpResponseMessage,
+  WebSocketUpgradeResponseMessage,
+  WebSocketFrameMessage,
+  WebSocketCloseMessage,
 } from "./types";
 import { CloseCodes, ErrorCodes } from "./types";
 import { getConnectionManager } from "./connection-manager";
@@ -371,6 +374,90 @@ function handleMessage(
 
       // Close the connection
       socket.close(CloseCodes.NORMAL, "Client requested disconnect");
+      break;
+    }
+
+    case "websocket_upgrade_response": {
+      const upgradeResponse = message as WebSocketUpgradeResponseMessage;
+      if (!upgradeResponse.id) {
+        console.warn("[WebSocket] Received websocket_upgrade_response without ID");
+        return;
+      }
+
+      connectionManager.resolveWebSocketUpgrade(upgradeResponse.id, upgradeResponse);
+      break;
+    }
+
+    case "websocket_frame": {
+      const frame = message as WebSocketFrameMessage;
+      if (!frame.id) {
+        console.warn("[WebSocket] Received websocket_frame without ID");
+        return;
+      }
+
+      // Find the public WebSocket connection
+      const wsConnection = connectionManager.getProxiedWebSocket(frame.id);
+      if (!wsConnection) {
+        console.warn(`[WebSocket] No public WebSocket found for ID: ${frame.id}`);
+        return;
+      }
+
+      // Relay frame to public client
+      const publicWs = wsConnection.publicSocket;
+      if (publicWs.readyState !== publicWs.OPEN) {
+        console.warn(`[WebSocket] Public WebSocket ${frame.id} not open (state: ${publicWs.readyState})`);
+        return;
+      }
+
+      // Decode and send based on opcode
+      const { opcode, data } = frame.payload;
+
+      if (opcode === 1) {
+        // Text frame
+        publicWs.send(data, { binary: false });
+      } else if (opcode === 2) {
+        // Binary frame (decode from base64)
+        const buffer = Buffer.from(data, "base64");
+        publicWs.send(buffer, { binary: true });
+      } else if (opcode === 9) {
+        // Ping frame (decode from base64)
+        const buffer = Buffer.from(data, "base64");
+        publicWs.ping(buffer);
+      } else if (opcode === 10) {
+        // Pong frame (decode from base64)
+        const buffer = Buffer.from(data, "base64");
+        publicWs.pong(buffer);
+      } else {
+        console.warn(`[WebSocket] Unsupported opcode ${opcode} for frame relay`);
+      }
+
+      break;
+    }
+
+    case "websocket_close": {
+      const closeMsg = message as WebSocketCloseMessage;
+      if (!closeMsg.id) {
+        console.warn("[WebSocket] Received websocket_close without ID");
+        return;
+      }
+
+      // Find the public WebSocket connection
+      const wsConnection = connectionManager.getProxiedWebSocket(closeMsg.id);
+      if (!wsConnection) {
+        console.warn(`[WebSocket] No public WebSocket found for ID: ${closeMsg.id}`);
+        return;
+      }
+
+      // Close the public WebSocket
+      const publicWs = wsConnection.publicSocket;
+      const { code, reason } = closeMsg.payload;
+
+      if (publicWs.readyState === publicWs.OPEN || publicWs.readyState === publicWs.CONNECTING) {
+        publicWs.close(code, reason);
+      }
+
+      // Unregister the WebSocket
+      connectionManager.unregisterProxiedWebSocket(closeMsg.id);
       break;
     }
 

@@ -12,7 +12,11 @@ export type MessageType =
   | "heartbeat"
   | "heartbeat_ack"
   | "http_request"
-  | "http_response";
+  | "http_response"
+  | "websocket_upgrade"
+  | "websocket_upgrade_response"
+  | "websocket_frame"
+  | "websocket_close";
 
 export interface BaseMessage {
   type: MessageType;
@@ -92,6 +96,57 @@ export interface HttpResponseMessage extends BaseMessage {
   payload: HttpResponsePayload;
 }
 
+// WebSocket message types
+export interface WebSocketUpgradePayload {
+  path: string;
+  headers: Record<string, string>;
+  subprotocol?: string;
+}
+
+export interface WebSocketUpgradeMessage extends BaseMessage {
+  type: "websocket_upgrade";
+  id: string;
+  payload: WebSocketUpgradePayload;
+}
+
+export interface WebSocketUpgradeResponsePayload {
+  accepted: boolean;
+  statusCode: number;
+  headers?: Record<string, string>;
+  reason?: string;
+}
+
+export interface WebSocketUpgradeResponseMessage extends BaseMessage {
+  type: "websocket_upgrade_response";
+  id: string;
+  payload: WebSocketUpgradeResponsePayload;
+}
+
+export interface WebSocketFramePayload {
+  opcode: number; // 1=text, 2=binary, 9=ping, 10=pong
+  data: string; // Plain text for opcode 1, base64 for others
+  final: boolean;
+}
+
+export interface WebSocketFrameMessage extends BaseMessage {
+  type: "websocket_frame";
+  id: string;
+  direction: "client_to_server" | "server_to_client";
+  payload: WebSocketFramePayload;
+}
+
+export interface WebSocketClosePayload {
+  code: number;
+  reason: string;
+  initiator: "client" | "server" | "tunnel";
+}
+
+export interface WebSocketCloseMessage extends BaseMessage {
+  type: "websocket_close";
+  id: string;
+  payload: WebSocketClosePayload;
+}
+
 export type Message =
   | ConnectedMessage
   | ErrorMessage
@@ -99,7 +154,11 @@ export type Message =
   | HeartbeatMessage
   | HeartbeatAckMessage
   | HttpRequestMessage
-  | HttpResponseMessage;
+  | HttpResponseMessage
+  | WebSocketUpgradeMessage
+  | WebSocketUpgradeResponseMessage
+  | WebSocketFrameMessage
+  | WebSocketCloseMessage;
 
 // Connection state
 export type ConnectionState =

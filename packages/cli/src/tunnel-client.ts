@@ -17,7 +17,11 @@ import type {
   HeartbeatMessage,
   HttpRequestMessage,
   HttpResponsePayload,
+  WebSocketUpgradeMessage,
+  WebSocketFrameMessage,
+  WebSocketCloseMessage,
 } from "./types";
+import { WebSocketHandler } from "./websocket-handler";
 
 const DEFAULT_HEARTBEAT_INTERVAL = 10000; // 10 seconds
 const DEFAULT_RECONNECT_MAX_ATTEMPTS = 5;
@@ -37,6 +41,7 @@ export class TunnelClient {
   private reconnectAttempts = 0;
   private requestCount = 0;
   private shouldReconnect = true;
+  private wsHandler: WebSocketHandler;
 
   // Event handlers
   private onConnected: ((info: TunnelInfo) => void) | null = null;
@@ -52,6 +57,12 @@ export class TunnelClient {
       reconnectMaxAttempts: config.reconnectMaxAttempts ?? DEFAULT_RECONNECT_MAX_ATTEMPTS,
       reconnectBaseDelay: config.reconnectBaseDelay ?? DEFAULT_RECONNECT_BASE_DELAY,
     };
+
+    // Initialize WebSocket handler
+    this.wsHandler = new WebSocketHandler(
+      (message) => this.send(message),
+      config.localPort
+    );
   }
 
   /**
@@ -170,6 +181,9 @@ export class TunnelClient {
     this.stopHeartbeat();
     this.stopReconnectTimer();
 
+    // Close all WebSocket connections
+    this.wsHandler.closeAll(1000, reason);
+
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       // Send disconnect message
       this.send({
@@ -256,6 +270,24 @@ export class TunnelClient {
       case "disconnect": {
         // Server requested disconnect
         this.shouldReconnect = false;
+        break;
+      }
+
+      case "websocket_upgrade": {
+        const upgradeMsg = message as WebSocketUpgradeMessage;
+        this.wsHandler.handleUpgrade(upgradeMsg);
+        break;
+      }
+
+      case "websocket_frame": {
+        const frameMsg = message as WebSocketFrameMessage;
+        this.wsHandler.handleFrame(frameMsg);
+        break;
+      }
+
+      case "websocket_close": {
+        const closeMsg = message as WebSocketCloseMessage;
+        this.wsHandler.handleClose(closeMsg);
         break;
       }
     }
