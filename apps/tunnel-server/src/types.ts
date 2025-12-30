@@ -182,7 +182,8 @@ export interface WebSocketCloseMessage extends BaseMessage {
  * frames including text, binary, ping, pong, and close frames.
  */
 export interface WebSocketDataPayload {
-  data: string; // Base64-encoded raw TCP bytes
+  data: string; // Base64-encoded WebSocket message content
+  binary?: boolean; // Whether the message is binary (default: false for text)
 }
 
 export interface WebSocketDataMessage extends BaseMessage {

@@ -1,11 +1,12 @@
 /**
  * WebSocket Handler
  *
- * Handles WebSocket connections to local servers and relays raw bytes
+ * Handles WebSocket connections to local servers and relays messages
  * bidirectionally between tunnel server and local WebSocket server.
+ *
+ * Uses the 'ws' library for proper WebSocket protocol handling.
  */
 
-import net from "net";
 import WebSocket from "ws";
 import type {
   WebSocketUpgradeMessage,
@@ -18,14 +19,11 @@ import type {
 const MAX_FRAME_SIZE = 10 * 1024 * 1024; // 10MB
 
 /**
- * Local WebSocket connection via TCP socket
- *
- * Uses raw TCP socket instead of WebSocket client to preserve all
- * WebSocket frame metadata (RSV bits, masking, extensions) during relay.
+ * Local WebSocket connection using ws library
  */
 interface LocalWebSocketConnection {
   id: string;
-  localSocket: net.Socket;
+  localWs: WebSocket;
   createdAt: Date;
   frameCount: number;
   bytesTransferred: number;
@@ -49,128 +47,69 @@ export class WebSocketHandler {
   /**
    * Handle WebSocket upgrade request from tunnel server
    *
-   * Creates a raw TCP connection to the local server and manually performs
-   * the WebSocket upgrade handshake. This allows us to relay raw bytes
-   * instead of parsing WebSocket frames, preserving all frame metadata.
+   * Uses the ws library to connect to the local WebSocket server.
+   * Messages are relayed using the WebSocket API instead of raw bytes.
    */
   async handleUpgrade(message: WebSocketUpgradeMessage): Promise<void> {
     const { id, payload } = message;
     const { path, headers, subprotocol } = payload;
 
     try {
-      // Create TCP connection to local server
-      const localSocket = net.connect({
-        host: "localhost",
-        port: this.localPort,
-      });
+      // Build WebSocket URL
+      const wsUrl = `ws://localhost:${this.localPort}${path}`;
 
-      // Wait for connection to establish
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          localSocket.destroy();
-          reject(new Error("Connection timeout"));
-        }, 5000);
-
-        localSocket.on("connect", () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-
-        localSocket.on("error", (err) => {
-          clearTimeout(timeout);
-          reject(err);
-        });
-      });
-
-      // Generate WebSocket handshake key
-      const key = Buffer.from(Math.random().toString(36).substring(2, 18)).toString("base64");
-
-      // Build WebSocket upgrade request
-      let upgradeRequest = `GET ${path} HTTP/1.1\r\n`;
-      upgradeRequest += `Host: localhost:${this.localPort}\r\n`;
-      upgradeRequest += `Upgrade: websocket\r\n`;
-      upgradeRequest += `Connection: Upgrade\r\n`;
-      upgradeRequest += `Sec-WebSocket-Key: ${key}\r\n`;
-      upgradeRequest += `Sec-WebSocket-Version: 13\r\n`;
-
-      // Add custom headers
+      // Build headers for the local connection
+      // Skip WebSocket-specific headers as the ws library handles those
+      const localHeaders: Record<string, string> = {};
       for (const [name, value] of Object.entries(headers)) {
-        // Skip headers that are part of the upgrade protocol
         if (
           name.toLowerCase() !== "host" &&
           name.toLowerCase() !== "upgrade" &&
           name.toLowerCase() !== "connection" &&
           !name.toLowerCase().startsWith("sec-websocket-")
         ) {
-          upgradeRequest += `${name}: ${value}\r\n`;
+          localHeaders[name] = value;
         }
       }
 
-      // Add subprotocol if specified
-      if (subprotocol) {
-        upgradeRequest += `Sec-WebSocket-Protocol: ${subprotocol}\r\n`;
-      }
+      // Create WebSocket connection to local server
+      // Disable compression to avoid RSV1 issues
+      const localWs = new WebSocket(wsUrl, subprotocol ? [subprotocol] : [], {
+        headers: localHeaders,
+        perMessageDeflate: false,
+      });
 
-      upgradeRequest += `\r\n`;
-
-      // Send upgrade request
-      localSocket.write(upgradeRequest);
-
-      // Wait for upgrade response
-      const upgradeResponse = await new Promise<string>((resolve, reject) => {
+      // Wait for connection to establish
+      await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
-          localSocket.destroy();
-          reject(new Error("Upgrade response timeout"));
+          localWs.terminate();
+          reject(new Error("Connection timeout"));
         }, 5000);
 
-        let buffer = "";
-        const onData = (chunk: Buffer) => {
-          buffer += chunk.toString();
-
-          // Check if we have received the full HTTP response headers
-          const headersEndIndex = buffer.indexOf("\r\n\r\n");
-          if (headersEndIndex !== -1) {
-            clearTimeout(timeout);
-            localSocket.off("data", onData);
-            resolve(buffer.substring(0, headersEndIndex));
-          }
-        };
-
-        localSocket.on("data", onData);
-
-        localSocket.on("error", (err) => {
+        localWs.on("open", () => {
           clearTimeout(timeout);
-          localSocket.off("data", onData);
+          resolve();
+        });
+
+        localWs.on("error", (err) => {
+          clearTimeout(timeout);
           reject(err);
         });
       });
 
-      // Parse upgrade response
-      const lines = upgradeResponse.split("\r\n");
-      const statusLine = lines[0];
-      const statusMatch = statusLine.match(/HTTP\/1\.1 (\d+)/);
+      console.log(`[WebSocketHandler] Connected to local server for ${id}`);
 
-      if (!statusMatch) {
-        throw new Error("Invalid HTTP response");
-      }
-
-      const statusCode = parseInt(statusMatch[1]);
-
-      if (statusCode !== 101) {
-        throw new Error(`Upgrade failed with status ${statusCode}`);
-      }
-
-      // Connection and upgrade successful - register it
+      // Connection successful - register it
       this.connections.set(id, {
         id,
-        localSocket,
+        localWs,
         createdAt: new Date(),
         frameCount: 0,
         bytesTransferred: 0,
       });
 
-      // Set up event handlers for raw byte relay
-      this.setupLocalSocketHandlers(id, localSocket);
+      // Set up event handlers for message relay
+      this.setupLocalWsHandlers(id, localWs);
 
       // Send success response to tunnel server
       const response: WebSocketUpgradeResponseMessage = {
@@ -203,58 +142,67 @@ export class WebSocketHandler {
   }
 
   /**
-   * Set up event handlers for local TCP socket
+   * Set up event handlers for local WebSocket connection
    *
-   * Relays raw bytes from the local WebSocket server to the tunnel,
-   * preserving all WebSocket frame metadata (RSV bits, masking, extensions).
+   * Relays messages from the local WebSocket server to the tunnel.
    */
-  private setupLocalSocketHandlers(id: string, localSocket: net.Socket): void {
-    // Handle raw bytes from local server → tunnel
-    localSocket.on("data", (chunk: Buffer) => {
+  private setupLocalWsHandlers(id: string, localWs: WebSocket): void {
+    // Handle messages from local server → tunnel
+    localWs.on("message", (data: Buffer | ArrayBuffer | Buffer[] | string, isBinary: boolean) => {
       const connection = this.connections.get(id);
       if (!connection) {
         return;
       }
 
-      // Check chunk size limit (10MB)
-      const bytes = chunk.length;
-      if (bytes > MAX_FRAME_SIZE) {
-        console.error(`[WebSocketHandler] Byte chunk too large: ${bytes} bytes (max ${MAX_FRAME_SIZE})`);
-        localSocket.destroy();
+      // Convert to Buffer (handle all RawData types from ws library)
+      let buffer: Buffer;
+      if (Buffer.isBuffer(data)) {
+        buffer = data;
+      } else if (typeof data === "string") {
+        buffer = Buffer.from(data);
+      } else if (data instanceof ArrayBuffer) {
+        buffer = Buffer.from(data);
+      } else if (Array.isArray(data)) {
+        buffer = Buffer.concat(data);
+      } else {
+        console.error(`[WebSocketHandler] Unexpected data type: ${typeof data}`);
+        return;
+      }
+
+      // Check size limit (10MB)
+      if (buffer.length > MAX_FRAME_SIZE) {
+        console.error(`[WebSocketHandler] Message too large: ${buffer.length} bytes (max ${MAX_FRAME_SIZE})`);
+        localWs.terminate();
         this.connections.delete(id);
         return;
       }
 
-      // Build WebSocket data message with raw bytes encoded as base64
+      // Build WebSocket data message
       const dataMessage: WebSocketDataMessage = {
         type: "websocket_data",
         id,
         timestamp: Date.now(),
         payload: {
-          data: chunk.toString("base64"),
+          data: buffer.toString("base64"),
+          binary: isBinary,
         },
       };
 
       // Update stats
       connection.frameCount++;
-      connection.bytesTransferred += bytes;
+      connection.bytesTransferred += buffer.length;
 
       // Send to tunnel
       this.sendToTunnel(dataMessage);
     });
 
     // Handle close from local server
-    localSocket.on("close", () => {
-      this.handleLocalClose(id, 1000, "Connection closed");
-    });
-
-    // Handle end from local server
-    localSocket.on("end", () => {
-      this.handleLocalClose(id, 1000, "Connection ended");
+    localWs.on("close", (code: number, reason: Buffer) => {
+      this.handleLocalClose(id, code, reason.toString() || "Connection closed");
     });
 
     // Handle error from local server
-    localSocket.on("error", (err) => {
+    localWs.on("error", (err) => {
       console.error(`[WebSocketHandler] Error on ${id}:`, err.message);
       this.handleLocalClose(id, 1011, err.message);
     });
@@ -289,14 +237,14 @@ export class WebSocketHandler {
   }
 
   /**
-   * Handle raw byte data from tunnel (public client → local server)
+   * Handle data from tunnel (public client → local server)
    *
-   * Receives raw bytes from the tunnel server and writes them directly to
-   * the local TCP socket, preserving all WebSocket frame metadata.
+   * Receives message data from the tunnel server and sends to the local
+   * WebSocket server using the ws library.
    */
   handleData(message: WebSocketDataMessage): void {
     const { id, payload } = message;
-    const { data } = payload;
+    const { data, binary } = payload;
 
     const connection = this.connections.get(id);
     if (!connection) {
@@ -304,33 +252,37 @@ export class WebSocketHandler {
       return;
     }
 
-    const { localSocket } = connection;
+    const { localWs } = connection;
 
-    // Check if socket is still writable
-    if (localSocket.destroyed || !localSocket.writable) {
-      console.warn(`[WebSocketHandler] Local socket ${id} not writable`);
+    // Check if WebSocket is still open
+    if (localWs.readyState !== WebSocket.OPEN) {
+      console.warn(`[WebSocketHandler] Local WebSocket ${id} not open (state: ${localWs.readyState})`);
       return;
     }
 
-    // Decode base64 data to raw bytes
-    const rawBytes = Buffer.from(data, "base64");
+    // Decode base64 data
+    const buffer = Buffer.from(data, "base64");
 
-    // Write raw bytes directly to socket
-    // This preserves all WebSocket frame metadata (RSV bits, masking, extensions)
-    localSocket.write(rawBytes);
+    // Send via WebSocket API
+    try {
+      localWs.send(buffer, { binary: binary ?? false });
+    } catch (error) {
+      console.error(`[WebSocketHandler] Failed to send to local server:`, (error as Error).message);
+      return;
+    }
 
     // Update stats
     connection.frameCount++;
-    connection.bytesTransferred += rawBytes.length;
+    connection.bytesTransferred += buffer.length;
   }
 
   /**
    * Handle frame from tunnel (public client → local server)
-   * @deprecated Use handleData() for raw byte relay instead
+   * @deprecated Use handleData() instead
    */
   handleFrame(message: WebSocketFrameMessage): void {
     const { id, payload } = message;
-    const { opcode, data, final } = payload;
+    const { opcode, data } = payload;
 
     const connection = this.connections.get(id);
     if (!connection) {
@@ -338,29 +290,34 @@ export class WebSocketHandler {
       return;
     }
 
-    const { localSocket } = connection;
+    const { localWs } = connection;
 
-    // Check if socket is still writable
-    if (localSocket.destroyed || !localSocket.writable) {
-      console.warn(`[WebSocketHandler] Local socket ${id} not writable`);
+    // Check if WebSocket is still open
+    if (localWs.readyState !== WebSocket.OPEN) {
+      console.warn(`[WebSocketHandler] Local WebSocket ${id} not open`);
       return;
     }
 
-    // For backwards compatibility: decode and send based on opcode
-    // Note: This is deprecated - use handleData() for raw byte relay
-    if (opcode === 1) {
-      // Text frame
-      const buffer = Buffer.from(data);
-      localSocket.write(buffer);
-    } else if (opcode === 2) {
-      // Binary frame (decode from base64)
-      const buffer = Buffer.from(data, "base64");
-      localSocket.write(buffer);
-    } else if (opcode === 9 || opcode === 10) {
-      // Ping/pong frames - ignore in raw byte mode
-      console.warn(`[WebSocketHandler] Received ping/pong frame (opcode ${opcode}) - should use raw byte relay`);
-    } else {
-      console.warn(`[WebSocketHandler] Unsupported opcode ${opcode} for frame relay`);
+    // Send based on opcode
+    try {
+      if (opcode === 1) {
+        // Text frame
+        localWs.send(data, { binary: false });
+      } else if (opcode === 2) {
+        // Binary frame (decode from base64)
+        const buffer = Buffer.from(data, "base64");
+        localWs.send(buffer, { binary: true });
+      } else if (opcode === 9) {
+        // Ping
+        localWs.ping(Buffer.from(data, "base64"));
+      } else if (opcode === 10) {
+        // Pong
+        localWs.pong(Buffer.from(data, "base64"));
+      } else {
+        console.warn(`[WebSocketHandler] Unsupported opcode ${opcode}`);
+      }
+    } catch (error) {
+      console.error(`[WebSocketHandler] Failed to send frame:`, (error as Error).message);
     }
 
     // Update stats
@@ -381,11 +338,11 @@ export class WebSocketHandler {
       return;
     }
 
-    const { localSocket } = connection;
+    const { localWs } = connection;
 
-    // Close local socket
-    if (localSocket.readyState === WebSocket.OPEN || localSocket.readyState === WebSocket.CONNECTING) {
-      localSocket.close(code, reason);
+    // Close local WebSocket
+    if (localWs.readyState === WebSocket.OPEN || localWs.readyState === WebSocket.CONNECTING) {
+      localWs.close(code, reason);
     }
 
     // Cleanup
@@ -397,9 +354,9 @@ export class WebSocketHandler {
    */
   closeAll(code: number, reason: string): void {
     for (const [id, connection] of this.connections.entries()) {
-      const { localSocket } = connection;
-      if (localSocket.readyState === WebSocket.OPEN || localSocket.readyState === WebSocket.CONNECTING) {
-        localSocket.close(code, reason);
+      const { localWs } = connection;
+      if (localWs.readyState === WebSocket.OPEN || localWs.readyState === WebSocket.CONNECTING) {
+        localWs.close(code, reason);
       }
       this.connections.delete(id);
     }

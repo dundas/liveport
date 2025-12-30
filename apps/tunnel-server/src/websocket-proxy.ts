@@ -1,34 +1,54 @@
 /**
  * WebSocket Proxy
  *
- * Handles HTTP upgrade events and relays WebSocket frames between
- * public clients and CLI tunnels.
+ * Handles WebSocket connections from public clients and relays data
+ * to/from CLI tunnels.
+ *
+ * Key Change: Uses 'ws' library for proper WebSocket handling instead of
+ * manual 101 handshakes. This ensures proper socket detachment from the
+ * HTTP server and correct WebSocket protocol handling.
  */
 
 import type { IncomingMessage } from "http";
 import type { Socket } from "net";
-import { WebSocketServer } from "ws";
-import type { RawData } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import { nanoid } from "nanoid";
 import type { ConnectionManager } from "./connection-manager";
 import { extractSubdomain } from "./http-handler";
-import { MAX_WEBSOCKETS_PER_TUNNEL, MAX_FRAME_SIZE } from "./types";
+import { MAX_WEBSOCKETS_PER_TUNNEL } from "./types";
 import type {
-  WebSocketFrameMessage,
-  WebSocketCloseMessage,
+  WebSocketUpgradeMessage,
   WebSocketDataMessage,
+  WebSocketCloseMessage,
 } from "./types";
 
-// Singleton WebSocketServer instance for handling upgrades
-// Using noServer mode to handle upgrades manually via HTTP server's 'upgrade' event
-// Disable perMessageDeflate to avoid RSV1 bit corruption during raw byte relay
-const wss = new WebSocketServer({
-  noServer: true,
-  perMessageDeflate: false,
-});
+// Global WebSocketServer for public client connections
+let publicWss: WebSocketServer | null = null;
+
+/**
+ * Initialize the public WebSocket server
+ * Must be called during server startup
+ */
+export function initPublicWebSocketServer(): WebSocketServer {
+  if (publicWss) {
+    return publicWss;
+  }
+
+  publicWss = new WebSocketServer({
+    noServer: true,
+    // Disable compression to avoid protocol conflicts during relay
+    perMessageDeflate: false,
+  });
+
+  console.log("[WebSocketProxy] Public WebSocket server initialized (perMessageDeflate: false)");
+  return publicWss;
+}
 
 /**
  * Handle WebSocket upgrade event from HTTP server
+ *
+ * Uses the 'ws' library to properly handle WebSocket upgrades. This ensures
+ * the socket is correctly detached from HTTP processing.
  *
  * @param req - Incoming HTTP request
  * @param socket - TCP socket
@@ -49,6 +69,7 @@ export function handleWebSocketUpgradeEvent(
 
   // Validate subdomain
   if (!subdomain) {
+    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -56,12 +77,14 @@ export function handleWebSocketUpgradeEvent(
   // Find tunnel connection
   const connection = connectionManager.findBySubdomain(subdomain);
   if (!connection) {
+    socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
     socket.destroy();
     return;
   }
 
   // Check if tunnel is active
   if (connection.state !== "active") {
+    socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -69,133 +92,172 @@ export function handleWebSocketUpgradeEvent(
   // Check WebSocket connection limit
   const wsCount = connectionManager.getWebSocketCount(subdomain);
   if (wsCount >= MAX_WEBSOCKETS_PER_TUNNEL) {
+    socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
     socket.destroy();
     return;
   }
 
-  // Validation passed - perform WebSocket handshake using singleton
-  // Perform WebSocket upgrade handshake
-  wss.handleUpgrade(req, socket, head, (publicWs) => {
-    // Generate WebSocket connection ID
-    const wsId = `${subdomain}:ws:${nanoid(10)}`;
+  // Initialize WebSocketServer if needed
+  const wss = initPublicWebSocketServer();
 
-    // Register WebSocket in ConnectionManager
+  // Generate WebSocket connection ID
+  const wsId = `${subdomain}:ws:${nanoid(10)}`;
+
+  console.log(`[WebSocketProxy] Handling WebSocket upgrade for ${wsId}`);
+
+  // Use ws library to handle the upgrade properly
+  wss.handleUpgrade(req, socket, head, (publicWs: WebSocket) => {
+    console.log(`[WebSocketProxy] WebSocket ${wsId} connected via ws library`);
+
+    // Register WebSocket in ConnectionManager (store the ws object)
     connectionManager.registerProxiedWebSocket(wsId, subdomain, publicWs);
 
-    // Access underlying TCP socket for raw byte piping
-    // This allows us to relay raw bytes instead of parsing WebSocket frames,
-    // which preserves all frame metadata (RSV bits, masking, extensions)
-    const underlyingSocket = (publicWs as any)._socket;
-
-    // CRITICAL: Completely disable the WebSocket library's Receiver
-    // This prevents RSV1 errors by stopping the ws library from parsing incoming frames
-    // We handle all raw bytes manually for true end-to-end byte relay
-    const receiver = (publicWs as any)._receiver;
-    if (receiver) {
-      // Clean up the receiver to prevent it from parsing incoming data
-      receiver.removeAllListeners();
-      (publicWs as any)._receiver = null;
+    // Send WebSocket upgrade notification to CLI
+    // Filter out Sec-WebSocket-Extensions to prevent compression negotiation
+    const filteredHeaders: Record<string, string> = {};
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (name.toLowerCase() !== "sec-websocket-extensions" && typeof value === "string") {
+        filteredHeaders[name] = value;
+      }
     }
 
-    // Pause the WebSocket and remove all data listeners from the socket
-    publicWs.pause();
-    underlyingSocket.removeAllListeners("data");
+    const upgradeMessage: WebSocketUpgradeMessage = {
+      type: "websocket_upgrade",
+      id: wsId,
+      timestamp: Date.now(),
+      payload: {
+        path: req.url || "/",
+        headers: filteredHeaders,
+        subprotocol: req.headers["sec-websocket-protocol"],
+      },
+    };
 
-    // Set up event listeners for raw byte relay
-
-    // Handle raw bytes from underlying TCP socket
-    // This preserves all WebSocket frame metadata (RSV bits, masking, extensions)
-    underlyingSocket.on("data", (chunk: Buffer) => {
-      // Check chunk size limit (10MB)
-      const bytes = chunk.length;
-      if (bytes > MAX_FRAME_SIZE) {
-        console.warn(`[WebSocketProxy] Byte chunk too large: ${bytes} bytes (max ${MAX_FRAME_SIZE})`);
-        publicWs.close(1009, "Message too big");
-        connectionManager.unregisterProxiedWebSocket(wsId);
-        return;
-      }
-
-      // Build WebSocket data message with raw bytes encoded as base64
-      const dataMessage: WebSocketDataMessage = {
-        type: "websocket_data",
-        id: wsId,
-        timestamp: Date.now(),
-        payload: {
-          data: chunk.toString("base64"),
-        },
-      };
-
-      // Send to CLI tunnel
-      try {
-        connection.socket.send(JSON.stringify(dataMessage));
-      } catch (error) {
-        console.error(`[WebSocketProxy] Failed to relay bytes to CLI: ${(error as Error).message}`);
-        publicWs.close(1011, "Tunnel connection error");
-        connectionManager.unregisterProxiedWebSocket(wsId);
-        return;
-      }
-
-      // Track bytes transferred
-      connectionManager.trackWebSocketFrame(wsId, bytes);
-    });
-
-    // Handle close event
-    publicWs.on("close", (code: number, reason: Buffer) => {
-      // Re-fetch connection to get current state (avoid stale closure)
-      const currentConnection = connectionManager.findBySubdomain(subdomain);
-
-      // Only send close message if tunnel is still active
-      if (currentConnection && currentConnection.socket.readyState === currentConnection.socket.OPEN) {
-        const closeMessage: WebSocketCloseMessage = {
-          type: "websocket_close",
-          id: wsId,
-          timestamp: Date.now(),
-          payload: {
-            code,
-            reason: reason.toString(),
-            initiator: "client",
-          },
-        };
-
-        // Send to CLI tunnel
-        try {
-          currentConnection.socket.send(JSON.stringify(closeMessage));
-        } catch (error) {
-          console.error(`[WebSocketProxy] Failed to send close message to CLI: ${(error as Error).message}`);
-          // Continue with cleanup even if send fails
-        }
-      }
-
-      // Unregister WebSocket
+    try {
+      connection.socket.send(JSON.stringify(upgradeMessage));
+    } catch (error) {
+      console.error(`[WebSocketProxy] Failed to send upgrade message to CLI: ${(error as Error).message}`);
+      publicWs.close(1011, "Failed to notify tunnel");
       connectionManager.unregisterProxiedWebSocket(wsId);
-    });
+      return;
+    }
 
-    // Handle error event
-    publicWs.on("error", (error: Error) => {
-      console.error(`[WebSocketProxy] Error on ${wsId}:`, error.message);
-
-      // Notify CLI if connection still active
-      const currentConnection = connectionManager.findBySubdomain(subdomain);
-      if (currentConnection && currentConnection.socket.readyState === currentConnection.socket.OPEN) {
-        const closeMessage: WebSocketCloseMessage = {
-          type: "websocket_close",
-          id: wsId,
-          timestamp: Date.now(),
-          payload: {
-            code: 1011,
-            reason: error.message,
-            initiator: "tunnel",
-          },
-        };
-        try {
-          currentConnection.socket.send(JSON.stringify(closeMessage));
-        } catch (e) {
-          // Ignore error - tunnel connection might be broken
+    // Wait for CLI to establish local connection and respond
+    connectionManager
+      .waitForWebSocketUpgrade(wsId, 10000)
+      .then((upgradeResponse) => {
+        // Check if CLI accepted the upgrade
+        if (!upgradeResponse.payload.accepted) {
+          console.log(`[WebSocketProxy] CLI rejected WebSocket upgrade: ${upgradeResponse.payload.reason}`);
+          publicWs.close(1011, upgradeResponse.payload.reason || "Tunnel rejected connection");
+          connectionManager.unregisterProxiedWebSocket(wsId);
+          return;
         }
-      }
 
-      publicWs.close(1011, "Unexpected error");
-      connectionManager.unregisterProxiedWebSocket(wsId);
-    });
+        console.log(`[WebSocketProxy] CLI accepted WebSocket upgrade for ${wsId}`);
+
+        // Set up message relay from public client to CLI
+        publicWs.on("message", (data: Buffer | ArrayBuffer | Buffer[] | string, isBinary: boolean) => {
+          // Convert to Buffer (handle all RawData types from ws library)
+          let buffer: Buffer;
+          if (Buffer.isBuffer(data)) {
+            buffer = data;
+          } else if (typeof data === "string") {
+            buffer = Buffer.from(data);
+          } else if (data instanceof ArrayBuffer) {
+            buffer = Buffer.from(data);
+          } else if (Array.isArray(data)) {
+            buffer = Buffer.concat(data);
+          } else {
+            console.error(`[WebSocketProxy] Unexpected data type: ${typeof data}`);
+            return;
+          }
+
+          // Build WebSocket frame message
+          // We send the raw message content (not the frame), and the CLI will
+          // construct proper WebSocket frames for the local server
+          const dataMessage: WebSocketDataMessage = {
+            type: "websocket_data",
+            id: wsId,
+            timestamp: Date.now(),
+            payload: {
+              data: buffer.toString("base64"),
+              binary: isBinary,
+            },
+          };
+
+          // Send to CLI tunnel
+          try {
+            connection.socket.send(JSON.stringify(dataMessage));
+            connectionManager.trackWebSocketFrame(wsId, buffer.length);
+          } catch (error) {
+            console.error(`[WebSocketProxy] Failed to relay message to CLI: ${(error as Error).message}`);
+            publicWs.close(1011, "Tunnel error");
+            connectionManager.unregisterProxiedWebSocket(wsId);
+          }
+        });
+
+        // Handle close from public client
+        publicWs.on("close", (code: number, reason: Buffer) => {
+          console.log(`[WebSocketProxy] WebSocket ${wsId} closed (code: ${code}, reason: ${reason.toString()})`);
+
+          // Notify CLI
+          const currentConnection = connectionManager.findBySubdomain(subdomain);
+          if (currentConnection && currentConnection.socket.readyState === currentConnection.socket.OPEN) {
+            const closeMessage: WebSocketCloseMessage = {
+              type: "websocket_close",
+              id: wsId,
+              timestamp: Date.now(),
+              payload: {
+                code,
+                reason: reason.toString() || "Client closed",
+                initiator: "client",
+              },
+            };
+            try {
+              currentConnection.socket.send(JSON.stringify(closeMessage));
+            } catch (e) {
+              // Ignore - tunnel might be closed
+            }
+          }
+
+          // Clean up event listeners to prevent memory leaks
+          publicWs.removeAllListeners();
+          connectionManager.unregisterProxiedWebSocket(wsId);
+        });
+
+        // Handle error from public client
+        publicWs.on("error", (error: Error) => {
+          console.error(`[WebSocketProxy] Error on ${wsId}:`, error.message);
+
+          // Notify CLI
+          const currentConnection = connectionManager.findBySubdomain(subdomain);
+          if (currentConnection && currentConnection.socket.readyState === currentConnection.socket.OPEN) {
+            const closeMessage: WebSocketCloseMessage = {
+              type: "websocket_close",
+              id: wsId,
+              timestamp: Date.now(),
+              payload: {
+                code: 1011,
+                reason: error.message,
+                initiator: "tunnel",
+              },
+            };
+            try {
+              currentConnection.socket.send(JSON.stringify(closeMessage));
+            } catch (e) {
+              // Ignore - tunnel might be closed
+            }
+          }
+
+          // Clean up event listeners to prevent memory leaks
+          publicWs.removeAllListeners();
+          connectionManager.unregisterProxiedWebSocket(wsId);
+        });
+      })
+      .catch((error: Error) => {
+        console.error(`[WebSocketProxy] WebSocket upgrade failed for ${wsId}: ${error.message}`);
+        publicWs.close(1011, "Upgrade timeout");
+        connectionManager.unregisterProxiedWebSocket(wsId);
+      });
   });
 }

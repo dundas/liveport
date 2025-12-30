@@ -48,6 +48,7 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "@types/http-proxy": "^1.17.17",
     "@types/node": "^20.10.0",
     "@types/ws": "^8.5.0",
     "tsup": "^8.0.0",
@@ -57,6 +58,7 @@
   "dependencies": {
     "chalk": "^5.3.0",
     "commander": "^12.0.0",
+    "http-proxy": "^1.18.1",
     "ora": "^8.0.0",
     "ws": "^8.16.0"
   }

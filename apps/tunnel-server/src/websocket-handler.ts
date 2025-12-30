@@ -449,19 +449,24 @@ function handleMessage(
         return;
       }
 
-      // Access the underlying TCP socket to write raw bytes
+      // publicSocket is a WebSocket object (using ws library)
       const publicWs = wsConnection.publicSocket;
-      const underlyingSocket = (publicWs as any)._socket;
 
-      if (!underlyingSocket || underlyingSocket.destroyed) {
-        console.warn(`[WebSocket] Underlying socket ${dataMsg.id} not available or destroyed`);
+      if (publicWs.readyState !== publicWs.OPEN) {
+        console.warn(`[WebSocket] Public WebSocket ${dataMsg.id} not open (state: ${publicWs.readyState})`);
         return;
       }
 
-      // Decode base64 data and write raw bytes to socket
-      // This preserves all WebSocket frame metadata
-      const rawBytes = Buffer.from(dataMsg.payload.data, "base64");
-      underlyingSocket.write(rawBytes);
+      // Decode base64 data and send via WebSocket API
+      const data = Buffer.from(dataMsg.payload.data, "base64");
+      const isBinary = dataMsg.payload.binary ?? false;
+
+      try {
+        publicWs.send(data, { binary: isBinary });
+        console.log(`[WebSocket] Relayed ${data.length} bytes to public client ${dataMsg.id} (binary: ${isBinary})`);
+      } catch (error) {
+        console.error(`[WebSocket] Failed to relay data to ${dataMsg.id}:`, (error as Error).message);
+      }
 
       break;
     }
