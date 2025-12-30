@@ -87,13 +87,18 @@ export function handleWebSocketUpgradeEvent(
     // which preserves all frame metadata (RSV bits, masking, extensions)
     const underlyingSocket = (publicWs as any)._socket;
 
-    // CRITICAL: Pause the WebSocket library from processing the socket
-    // This prevents the ws library from interfering with our raw byte piping
-    // We need full control of the socket to relay bytes without frame parsing
-    publicWs.pause();
+    // CRITICAL: Completely disable the WebSocket library's Receiver
+    // This prevents RSV1 errors by stopping the ws library from parsing incoming frames
+    // We handle all raw bytes manually for true end-to-end byte relay
+    const receiver = (publicWs as any)._receiver;
+    if (receiver) {
+      // Clean up the receiver to prevent it from parsing incoming data
+      receiver.removeAllListeners();
+      (publicWs as any)._receiver = null;
+    }
 
-    // Remove the ws library's internal data listener to prevent conflicts
-    // The library adds its own 'data' listener which would compete with ours
+    // Pause the WebSocket and remove all data listeners from the socket
+    publicWs.pause();
     underlyingSocket.removeAllListeners("data");
 
     // Set up event listeners for raw byte relay
