@@ -87,6 +87,15 @@ export function handleWebSocketUpgradeEvent(
     // which preserves all frame metadata (RSV bits, masking, extensions)
     const underlyingSocket = (publicWs as any)._socket;
 
+    // CRITICAL: Pause the WebSocket library from processing the socket
+    // This prevents the ws library from interfering with our raw byte piping
+    // We need full control of the socket to relay bytes without frame parsing
+    publicWs.pause();
+
+    // Remove the ws library's internal data listener to prevent conflicts
+    // The library adds its own 'data' listener which would compete with ours
+    underlyingSocket.removeAllListeners("data");
+
     // Set up event listeners for raw byte relay
 
     // Handle raw bytes from underlying TCP socket
