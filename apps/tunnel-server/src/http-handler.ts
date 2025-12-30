@@ -355,8 +355,15 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
 
   // WebSocket upgrade detection middleware (before catch-all handler)
   app.all("*", async (c, next) => {
-    // Check if this is a WebSocket upgrade request
+    // Check if this is a WebSocket upgrade request first
     if (isWebSocketUpgrade(c.req.raw)) {
+      const url = new URL(c.req.url);
+
+      // Skip /connect path - it's handled by the control channel WebSocketServer
+      if (url.pathname === "/connect") {
+        return next();
+      }
+
       return handleWebSocketUpgrade(c, cfg);
     }
 

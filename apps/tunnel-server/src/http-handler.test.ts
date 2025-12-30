@@ -320,6 +320,28 @@ describe("HTTP Handler", () => {
     });
 
     describe("handleWebSocketUpgrade", () => {
+      it("should bypass middleware for /connect path", async () => {
+        // /connect path should be handled by dedicated WebSocketServer, not Hono middleware
+        const req = new Request("https://tunnel.liveport.dev/connect", {
+          headers: {
+            "host": "tunnel.liveport.dev",
+            "upgrade": "websocket",
+            "connection": "Upgrade",
+            "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+            "sec-websocket-version": "13",
+          },
+        });
+
+        const res = await app.request(req);
+
+        // Should NOT be handled by handleWebSocketUpgrade (which would return 502 for no subdomain)
+        // Instead, it passes through to catch-all handler
+        expect(res.status).not.toBe(502);
+        // Should also not try to handle as WebSocket upgrade
+        expect(mocks.connectionManager.findBySubdomain).not.toHaveBeenCalled();
+        expect(mocks.socket.send).not.toHaveBeenCalled();
+      });
+
       it("should return 404 for invalid subdomain", async () => {
         const req = new Request("https://liveport.online/ws", {
           headers: {
