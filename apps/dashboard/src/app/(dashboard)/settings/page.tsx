@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,13 +10,7 @@ import { Loader2 } from "lucide-react";
 
 export default function SettingsPage() {
   const { data: session, isPending } = useSession();
-  const [name, setName] = useState("");
-
-  useEffect(() => {
-    if (session?.user?.name) {
-      setName(session.user.name);
-    }
-  }, [session]);
+  const [name, setName] = useState(session?.user?.name || "");
 
   if (isPending) {
     return (

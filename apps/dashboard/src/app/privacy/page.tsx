@@ -32,7 +32,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-foreground mb-4 uppercase">2. What We Don't Collect</h2>
+            <h2 className="text-2xl font-bold text-foreground mb-4 uppercase">2. What We Don&apos;t Collect</h2>
             <p className="mb-4">We explicitly do NOT collect or store:</p>
             <ul className="list-disc list-inside space-y-2 ml-4">
               <li>The content of your tunneled traffic</li>

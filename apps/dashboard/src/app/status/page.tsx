@@ -84,7 +84,7 @@ export default function StatusPage() {
           <div className="mt-8 pt-8 border-t border-border">
             <h3 className="text-lg font-bold mb-4 uppercase">Report an Issue</h3>
             <p className="text-muted-foreground mb-4">
-              If you're experiencing problems with the service, please report them on our GitHub repository:
+              If you&apos;re experiencing problems with the service, please report them on our GitHub repository:
             </p>
             <a 
               href="https://github.com/dundas/liveport/issues" 

@@ -23,7 +23,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-2xl font-bold text-foreground mb-4 uppercase">1. Acceptance of Terms</h2>
             <p>
-              By accessing or using LivePort ("the Service"), you agree to be bound by these Terms of Service.
+              By accessing or using LivePort (&quot;the Service&quot;), you agree to be bound by these Terms of Service.
               If you do not agree to these terms, do not use the Service.
             </p>
           </section>
@@ -49,7 +49,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-2xl font-bold text-foreground mb-4 uppercase">4. Service Limitations</h2>
             <p>
-              The Service is provided "as is" without warranties of any kind. We reserve the right to:
+              The Service is provided &quot;as is&quot; without warranties of any kind. We reserve the right to:
             </p>
             <ul className="list-disc list-inside space-y-2 ml-4">
               <li>Modify or discontinue the Service at any time</li>

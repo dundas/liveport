@@ -19,15 +19,15 @@ function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
 
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
-  const [error, setError] = useState("");
+  const [status, setStatus] = useState<"loading" | "success" | "error">(
+    token ? "loading" : "error"
+  );
+  const [error, setError] = useState(
+    token ? "" : "Invalid or missing verification token"
+  );
 
   useEffect(() => {
-    if (!token) {
-      setStatus("error");
-      setError("Invalid or missing verification token");
-      return;
-    }
+    if (!token) return;
 
     const verifyEmail = async () => {
       try {
