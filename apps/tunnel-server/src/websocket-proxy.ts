@@ -16,11 +16,16 @@ import { MAX_WEBSOCKETS_PER_TUNNEL, MAX_FRAME_SIZE } from "./types";
 import type {
   WebSocketFrameMessage,
   WebSocketCloseMessage,
+  WebSocketDataMessage,
 } from "./types";
 
 // Singleton WebSocketServer instance for handling upgrades
 // Using noServer mode to handle upgrades manually via HTTP server's 'upgrade' event
-const wss = new WebSocketServer({ noServer: true });
+// Disable perMessageDeflate to avoid RSV1 bit corruption during raw byte relay
+const wss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: false,
+});
 
 /**
  * Handle WebSocket upgrade event from HTTP server
@@ -77,37 +82,40 @@ export function handleWebSocketUpgradeEvent(
     // Register WebSocket in ConnectionManager
     connectionManager.registerProxiedWebSocket(wsId, subdomain, publicWs);
 
-    // Set up event listeners for frame relay
+    // Access underlying TCP socket for raw byte piping
+    // This allows us to relay raw bytes instead of parsing WebSocket frames,
+    // which preserves all frame metadata (RSV bits, masking, extensions)
+    const underlyingSocket = (publicWs as any)._socket;
 
-    // Handle incoming messages from public client
-    publicWs.on("message", (data: RawData, isBinary: boolean) => {
-      // Check frame size limit (10MB)
-      const bytes = Buffer.byteLength(data as Buffer);
+    // Set up event listeners for raw byte relay
+
+    // Handle raw bytes from underlying TCP socket
+    // This preserves all WebSocket frame metadata (RSV bits, masking, extensions)
+    underlyingSocket.on("data", (chunk: Buffer) => {
+      // Check chunk size limit (10MB)
+      const bytes = chunk.length;
       if (bytes > MAX_FRAME_SIZE) {
-        console.warn(`[WebSocketProxy] Frame too large: ${bytes} bytes (max ${MAX_FRAME_SIZE})`);
+        console.warn(`[WebSocketProxy] Byte chunk too large: ${bytes} bytes (max ${MAX_FRAME_SIZE})`);
         publicWs.close(1009, "Message too big");
         connectionManager.unregisterProxiedWebSocket(wsId);
         return;
       }
 
-      // Build WebSocket frame message
-      const frameMessage: WebSocketFrameMessage = {
-        type: "websocket_frame",
+      // Build WebSocket data message with raw bytes encoded as base64
+      const dataMessage: WebSocketDataMessage = {
+        type: "websocket_data",
         id: wsId,
-        direction: "client_to_server",
         timestamp: Date.now(),
         payload: {
-          opcode: isBinary ? 2 : 1,
-          data: isBinary ? Buffer.from(data as Buffer).toString("base64") : data.toString(),
-          final: true,
+          data: chunk.toString("base64"),
         },
       };
 
       // Send to CLI tunnel
       try {
-        connection.socket.send(JSON.stringify(frameMessage));
+        connection.socket.send(JSON.stringify(dataMessage));
       } catch (error) {
-        console.error(`[WebSocketProxy] Failed to relay frame to CLI: ${(error as Error).message}`);
+        console.error(`[WebSocketProxy] Failed to relay bytes to CLI: ${(error as Error).message}`);
         publicWs.close(1011, "Tunnel connection error");
         connectionManager.unregisterProxiedWebSocket(wsId);
         return;
@@ -174,56 +182,6 @@ export function handleWebSocketUpgradeEvent(
 
       publicWs.close(1011, "Unexpected error");
       connectionManager.unregisterProxiedWebSocket(wsId);
-    });
-
-    // Handle ping event
-    publicWs.on("ping", (data: Buffer) => {
-      const frameMessage: WebSocketFrameMessage = {
-        type: "websocket_frame",
-        id: wsId,
-        direction: "client_to_server",
-        timestamp: Date.now(),
-        payload: {
-          opcode: 9,
-          data: data.toString("base64"),
-          final: true,
-        },
-      };
-
-      try {
-        connection.socket.send(JSON.stringify(frameMessage));
-      } catch (error) {
-        console.error(`[WebSocketProxy] Failed to relay ping to CLI: ${(error as Error).message}`);
-        publicWs.close(1011, "Tunnel connection error");
-        connectionManager.unregisterProxiedWebSocket(wsId);
-        return;
-      }
-      connectionManager.trackWebSocketFrame(wsId, data.length);
-    });
-
-    // Handle pong event
-    publicWs.on("pong", (data: Buffer) => {
-      const frameMessage: WebSocketFrameMessage = {
-        type: "websocket_frame",
-        id: wsId,
-        direction: "client_to_server",
-        timestamp: Date.now(),
-        payload: {
-          opcode: 10,
-          data: data.toString("base64"),
-          final: true,
-        },
-      };
-
-      try {
-        connection.socket.send(JSON.stringify(frameMessage));
-      } catch (error) {
-        console.error(`[WebSocketProxy] Failed to relay pong to CLI: ${(error as Error).message}`);
-        publicWs.close(1011, "Tunnel connection error");
-        connectionManager.unregisterProxiedWebSocket(wsId);
-        return;
-      }
-      connectionManager.trackWebSocketFrame(wsId, data.length);
     });
   });
 }

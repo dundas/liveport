@@ -32,7 +32,7 @@
 
 ## Tasks
 
-- [ ] 1.0 Update Message Types for Raw Byte Piping
+- [x] 1.0 Update Message Types for Raw Byte Piping
   - [x] 1.1 Add `WebSocketDataMessage` interface to `apps/tunnel-server/src/types.ts`
     - Define interface with `type: "websocket_data"`, `id: string`, `timestamp: number`, `data: string` (base64)
     - Add `"websocket_data"` to `MessageType` union (line 8)
@@ -44,24 +44,24 @@
     - Add comments explaining this replaces frame parsing
     - Document that data is base64-encoded raw TCP bytes
 
-- [ ] 2.0 Refactor Tunnel Server for Raw Byte Piping
-  - [ ] 2.1 Access underlying TCP socket in `websocket-proxy.ts` after upgrade (line 77)
+- [x] 2.0 Refactor Tunnel Server for Raw Byte Piping
+  - [x] 2.1 Access underlying TCP socket in `websocket-proxy.ts` after upgrade (line 77)
     - After `wss.handleUpgrade()` callback, access `(publicWs as any)._socket`
     - Store reference to underlying TCP socket
-  - [ ] 2.2 Replace `publicWs.on("message")` handler with `socket.on("data")` (lines 87-122)
+  - [x] 2.2 Replace `publicWs.on("message")` handler with `socket.on("data")` (lines 87-122)
     - Remove frame parsing logic (opcode extraction)
     - Listen to raw socket 'data' events instead
     - Encode chunks as base64
     - Send `WebSocketDataMessage` to CLI via control channel
     - Keep frame size checks (MAX_FRAME_SIZE)
-  - [ ] 2.3 Update `websocket-handler.ts` to relay `websocket_data` messages
+  - [x] 2.3 Update `websocket-handler.ts` to relay `websocket_data` messages
     - Add handler for `websocket_data` message type
     - Route raw byte messages from tunnel server to public client
     - Convert base64 back to Buffer and write to public WebSocket's underlying socket
-  - [ ] 2.4 Remove obsolete ping/pong handlers (lines 183-231)
+  - [x] 2.4 Remove obsolete ping/pong handlers (lines 183-231)
     - Raw bytes will automatically include ping/pong frames
     - Keep error and close handlers (still needed)
-  - [ ] 2.5 Update error logging to reflect raw byte relay approach
+  - [x] 2.5 Update error logging to reflect raw byte relay approach
     - Change log messages from "frame relay" to "byte relay"
 
 - [ ] 3.0 Refactor CLI for TCP Connection Handling
