@@ -115,13 +115,14 @@ describe("LivePortAgent", () => {
       });
 
       const agent = new LivePortAgent({ key: "lpk_test123" });
-      const promise = agent.waitForTunnel({ timeout: 2000, pollInterval: 500 });
+      const promise = agent.waitForTunnel({ timeout: 2000, pollInterval: 500 }).catch((e) => e);
 
       // Advance past timeout
       await vi.advanceTimersByTimeAsync(3000);
 
-      await expect(promise).rejects.toThrow(TunnelTimeoutError);
-      await expect(promise).rejects.toThrow("Tunnel not available within 2000ms timeout");
+      const error = await promise;
+      expect(error).toBeInstanceOf(TunnelTimeoutError);
+      expect(error.message).toBe("Tunnel not available within 2000ms timeout");
     });
 
     it("should throw ApiError on non-408 error responses", async () => {
