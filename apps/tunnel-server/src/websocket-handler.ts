@@ -16,6 +16,7 @@ import type {
   WebSocketUpgradeResponseMessage,
   WebSocketFrameMessage,
   WebSocketCloseMessage,
+  WebSocketDataMessage,
 } from "./types";
 import { CloseCodes, ErrorCodes } from "./types";
 import { getConnectionManager } from "./connection-manager";
@@ -430,6 +431,37 @@ function handleMessage(
       } else {
         console.warn(`[WebSocket] Unsupported opcode ${opcode} for frame relay`);
       }
+
+      break;
+    }
+
+    case "websocket_data": {
+      const dataMsg = message as WebSocketDataMessage;
+      if (!dataMsg.id) {
+        console.warn("[WebSocket] Received websocket_data without ID");
+        return;
+      }
+
+      // Find the public WebSocket connection
+      const wsConnection = connectionManager.getProxiedWebSocket(dataMsg.id);
+      if (!wsConnection) {
+        console.warn(`[WebSocket] No public WebSocket found for ID: ${dataMsg.id}`);
+        return;
+      }
+
+      // Access the underlying TCP socket to write raw bytes
+      const publicWs = wsConnection.publicSocket;
+      const underlyingSocket = (publicWs as any)._socket;
+
+      if (!underlyingSocket || underlyingSocket.destroyed) {
+        console.warn(`[WebSocket] Underlying socket ${dataMsg.id} not available or destroyed`);
+        return;
+      }
+
+      // Decode base64 data and write raw bytes to socket
+      // This preserves all WebSocket frame metadata
+      const rawBytes = Buffer.from(dataMsg.payload.data, "base64");
+      underlyingSocket.write(rawBytes);
 
       break;
     }
