@@ -98,6 +98,68 @@ interface AgentTunnel {
 }
 ```
 
+## WebSocket Support
+
+LivePort tunnels support **bidirectional WebSocket connections**, allowing you to tunnel WebSocket traffic alongside HTTP requests. This is perfect for:
+
+- Real-time chat applications
+- Live dashboards and notifications
+- Collaborative editing tools
+- Game servers
+- Any application using WebSocket communication
+
+### Features
+
+- **Automatic Proxying**: WebSocket upgrade requests are automatically detected and proxied
+- **Bidirectional Frames**: Full support for text, binary, ping, pong, and close frames
+- **Resource Limits**:
+  - Maximum 100 concurrent WebSocket connections per tunnel
+  - Maximum 10MB frame size
+- **Connection Tracking**: Monitor active WebSocket connections in the dashboard
+
+### Example Usage
+
+**Local WebSocket Server** (running on port 3000):
+
+```javascript
+import WebSocket, { WebSocketServer } from 'ws';
+
+const wss = new WebSocketServer({ port: 3000 });
+
+wss.on('connection', (ws) => {
+  console.log('Client connected');
+
+  ws.on('message', (data) => {
+    console.log('Received:', data.toString());
+    ws.send(`Echo: ${data}`);
+  });
+
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+});
+```
+
+**Client Connecting Through Tunnel**:
+
+```javascript
+import WebSocket from 'ws';
+
+// Connect to your LivePort tunnel URL with ws:// or wss://
+const ws = new WebSocket('wss://abc123.liveport.dev/chat');
+
+ws.on('open', () => {
+  console.log('Connected!');
+  ws.send('Hello, world!');
+});
+
+ws.on('message', (data) => {
+  console.log('Received:', data.toString());
+});
+```
+
+For more details and examples, see [docs/WEBSOCKET_GUIDE.md](./docs/WEBSOCKET_GUIDE.md).
+
 ## Project Structure
 
 ```

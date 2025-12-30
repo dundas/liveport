@@ -35,6 +35,10 @@ tags:
     description: Manage bridge keys for tunnel authentication
   - name: Tunnels
     description: View and manage active tunnels
+  - name: WebSocket
+    description: |
+      WebSocket tunneling support for real-time bidirectional communication.
+      See [WebSocket Guide](../WEBSOCKET_GUIDE.md) for detailed documentation.
   - name: Agent API
     description: API endpoints for AI agents and automation
   - name: Health
@@ -306,6 +310,131 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentError'
 
+  /ws:
+    get:
+      summary: WebSocket tunnel connection
+      description: |
+        Establishes a WebSocket connection through your LivePort tunnel.
+
+        ## How to Connect
+
+        Connect to your tunnel URL with the WebSocket protocol:
+
+        ```javascript
+        // Replace with your tunnel URL
+        const ws = new WebSocket('wss://abc123.liveport.dev/your-path');
+        ```
+
+        ## Features
+
+        - **Automatic Proxying**: WebSocket upgrade requests are automatically detected and proxied to your local server
+        - **Bidirectional Frames**: Full support for text, binary, ping, pong, and close frames
+        - **Resource Limits**:
+          - Maximum 100 concurrent WebSocket connections per tunnel
+          - Maximum 10MB frame size
+        - **Subprotocol Support**: WebSocket subprotocols are forwarded to your local server
+
+        ## Frame Types Supported
+
+        - Text frames (opcode 1)
+        - Binary frames (opcode 2)
+        - Ping frames (opcode 9)
+        - Pong frames (opcode 10)
+        - Close frames (opcode 8)
+
+        ## Error Codes
+
+        - `429 Too Many Requests`: Exceeded 100 concurrent connections limit
+        - `1009 Message Too Big`: Frame size exceeded 10MB limit
+        - `502 Bad Gateway`: Unable to connect to local WebSocket server
+
+        ## Full Documentation
+
+        For complete WebSocket documentation including examples and best practices, see:
+        - [WebSocket Guide](../WEBSOCKET_GUIDE.md)
+        - [Architecture Docs](../architecture/websocket-protocol.md)
+
+      operationId: websocketTunnel
+      tags: [WebSocket]
+      parameters:
+        - name: Upgrade
+          in: header
+          required: true
+          description: Must be "websocket"
+          schema:
+            type: string
+            enum: [websocket]
+        - name: Connection
+          in: header
+          required: true
+          description: Must be "Upgrade"
+          schema:
+            type: string
+            enum: [Upgrade]
+        - name: Sec-WebSocket-Key
+          in: header
+          required: true
+          description: WebSocket handshake key
+          schema:
+            type: string
+        - name: Sec-WebSocket-Version
+          in: header
+          required: true
+          description: WebSocket protocol version (typically 13)
+          schema:
+            type: string
+            enum: ["13"]
+        - name: Sec-WebSocket-Protocol
+          in: header
+          required: false
+          description: Requested subprotocol(s)
+          schema:
+            type: string
+      responses:
+        '101':
+          description: |
+            Switching Protocols - WebSocket connection established.
+            The connection is now a bidirectional WebSocket stream.
+          headers:
+            Upgrade:
+              schema:
+                type: string
+                enum: [websocket]
+            Connection:
+              schema:
+                type: string
+                enum: [Upgrade]
+            Sec-WebSocket-Accept:
+              schema:
+                type: string
+              description: WebSocket handshake acceptance key
+            Sec-WebSocket-Protocol:
+              schema:
+                type: string
+              description: Selected subprotocol (if any)
+        '400':
+          description: Bad Request - Invalid WebSocket upgrade headers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too Many Requests - Exceeded 100 concurrent connections per tunnel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Too many WebSocket connections (max 100 per tunnel)"
+        '502':
+          description: Bad Gateway - Unable to connect to local WebSocket server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Unable to connect to local server"
+
   /api/health:
     get:
       summary: Health check
@@ -475,6 +604,10 @@ components:
           type: integer
         bytesTransferred:
           type: integer
+        websocketConnectionCount:
+          type: integer
+          description: Number of active WebSocket connections
+          example: 5
 
     AgentTunnel:
       type: object
