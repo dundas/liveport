@@ -20,6 +20,7 @@ import type {
   WebSocketUpgradeMessage,
   WebSocketFrameMessage,
   WebSocketCloseMessage,
+  WebSocketDataMessage,
 } from "./types";
 import { WebSocketHandler } from "./websocket-handler";
 
@@ -276,6 +277,12 @@ export class TunnelClient {
       case "websocket_upgrade": {
         const upgradeMsg = message as WebSocketUpgradeMessage;
         this.wsHandler.handleUpgrade(upgradeMsg);
+        break;
+      }
+
+      case "websocket_data": {
+        const dataMsg = message as WebSocketDataMessage;
+        this.wsHandler.handleData(dataMsg);
         break;
       }
 
