@@ -16,7 +16,8 @@ export type MessageType =
   | "websocket_upgrade"
   | "websocket_upgrade_response"
   | "websocket_frame"
-  | "websocket_close";
+  | "websocket_close"
+  | "websocket_data";
 
 export interface BaseMessage {
   type: MessageType;
@@ -147,6 +148,27 @@ export interface WebSocketCloseMessage extends BaseMessage {
   payload: WebSocketClosePayload;
 }
 
+/**
+ * WebSocket raw byte data relay
+ *
+ * This message type is used for raw byte piping instead of frame parsing.
+ * It replaces the frame-based approach to preserve WebSocket frame metadata
+ * (RSV bits, masking keys, extension-specific data, frame boundaries).
+ *
+ * The data field contains base64-encoded raw TCP bytes from the underlying
+ * socket connection, allowing transparent relay of all WebSocket protocol
+ * frames including text, binary, ping, pong, and close frames.
+ */
+export interface WebSocketDataPayload {
+  data: string; // Base64-encoded raw TCP bytes
+}
+
+export interface WebSocketDataMessage extends BaseMessage {
+  type: "websocket_data";
+  id: string;
+  payload: WebSocketDataPayload;
+}
+
 export type Message =
   | ConnectedMessage
   | ErrorMessage
@@ -158,7 +180,8 @@ export type Message =
   | WebSocketUpgradeMessage
   | WebSocketUpgradeResponseMessage
   | WebSocketFrameMessage
-  | WebSocketCloseMessage;
+  | WebSocketCloseMessage
+  | WebSocketDataMessage;
 
 // Connection state
 export type ConnectionState =
