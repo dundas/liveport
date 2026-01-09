@@ -415,11 +415,11 @@ function handleMessage(
 
       if (opcode === 1) {
         // Text frame
-        publicWs.send(data, { binary: false });
+        publicWs.send(data, { binary: false, compress: false });
       } else if (opcode === 2) {
         // Binary frame (decode from base64)
         const buffer = Buffer.from(data, "base64");
-        publicWs.send(buffer, { binary: true });
+        publicWs.send(buffer, { binary: true, compress: false });
       } else if (opcode === 9) {
         // Ping frame (decode from base64)
         const buffer = Buffer.from(data, "base64");
@@ -462,7 +462,7 @@ function handleMessage(
       const isBinary = dataMsg.payload.binary ?? false;
 
       try {
-        publicWs.send(data, { binary: isBinary });
+        publicWs.send(data, { binary: isBinary, compress: false });
         console.log(`[WebSocket] Relayed ${data.length} bytes to public client ${dataMsg.id} (binary: ${isBinary})`);
       } catch (error) {
         console.error(`[WebSocket] Failed to relay data to ${dataMsg.id}:`, (error as Error).message);

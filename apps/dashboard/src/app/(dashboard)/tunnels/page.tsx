@@ -9,6 +9,7 @@ import { Radio, ExternalLink, XCircle, RefreshCw, Loader2 } from "lucide-react";
 interface Tunnel {
   id: string;
   subdomain: string;
+  url: string; // Full tunnel URL from server
   localPort: number;
   keyName: string;
   connectedAt: string;
@@ -148,7 +149,7 @@ export default function TunnelsPage() {
             <h3 className="mb-2 text-lg font-semibold">No active tunnels</h3>
             <p className="mb-4 text-center text-sm text-muted-foreground max-w-md">
               Start a tunnel using the CLI to see it here. Run{" "}
-              <code className="rounded bg-muted px-1">liveport connect 3000 --key lpk_your_key</code>
+              <code className="rounded bg-muted px-1">liveport connect 3000 --key bk_your_key</code>
             </p>
           </CardContent>
         </Card>
@@ -170,7 +171,9 @@ export default function TunnelsPage() {
                       <span className="mr-1 h-2 w-2 rounded-full bg-white animate-pulse" />
                       {tunnel.state === "active" ? "Connected" : tunnel.state}
                     </Badge>
-                    <span className="text-lg">{tunnel.subdomain}.liveport.dev</span>
+                    <span className="text-lg">
+                      {tunnel.url ? new URL(tunnel.url).hostname : `${tunnel.subdomain}.liveport.dev`}
+                    </span>
                   </CardTitle>
                   <CardDescription>
                     Forwarding to localhost:{tunnel.localPort}
@@ -179,7 +182,7 @@ export default function TunnelsPage() {
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" asChild>
                     <a
-                      href={`https://${tunnel.subdomain}.liveport.dev`}
+                      href={tunnel.url || `https://${tunnel.subdomain}.liveport.dev`}
                       target="_blank"
                       rel="noopener noreferrer"
                     >

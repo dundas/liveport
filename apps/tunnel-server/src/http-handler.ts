@@ -353,23 +353,40 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
     }
   });
 
-  // WebSocket upgrade detection middleware (before catch-all handler)
-  app.all("*", async (c, next) => {
-    // Check if this is a WebSocket upgrade request first
-    if (isWebSocketUpgrade(c.req.raw)) {
-      const url = new URL(c.req.url);
+  // TLS certificate check endpoint for Caddy on-demand TLS
+  // Caddy calls this to verify if a domain should get a certificate
+  app.get("/api/tls-check", (c) => {
+    const domain = c.req.query("domain");
 
-      // Skip /connect path - it's handled by the control channel WebSocketServer
-      if (url.pathname === "/connect") {
-        return next();
-      }
-
-      return handleWebSocketUpgrade(c, cfg);
+    if (!domain) {
+      return c.text("Missing domain parameter", 400);
     }
 
-    // Not a WebSocket upgrade, continue to regular HTTP handler
-    return next();
+    // Only allow certificates for *.liveport.online subdomains
+    const baseDomain = cfg.baseDomain;
+    const pattern = new RegExp(`^[a-z0-9-]+\\.${baseDomain.replace(".", "\\.")}$`, "i");
+
+    if (pattern.test(domain)) {
+      // Domain is valid - allow certificate
+      logger.info({ domain }, "TLS check approved");
+      return c.text("OK", 200);
+    }
+
+    // Also allow the base domain itself (tunnel.liveport.online)
+    if (domain === `tunnel.${baseDomain}` || domain === baseDomain) {
+      logger.info({ domain }, "TLS check approved (base domain)");
+      return c.text("OK", 200);
+    }
+
+    // Domain not allowed
+    logger.warn({ domain }, "TLS check rejected");
+    return c.text("Domain not allowed", 403);
   });
+
+  // WebSocket upgrade detection middleware (before catch-all handler)
+  // Note: WebSocket upgrades are handled by the HTTP server's 'upgrade' event in index.ts
+  // This middleware should NOT be reached for upgrade requests
+  // If it is reached, something is misconfigured
 
   // Catch-all handler for proxied requests
   app.all("*", async (c) => {

@@ -265,7 +265,7 @@ export class WebSocketHandler {
 
     // Send via WebSocket API
     try {
-      localWs.send(buffer, { binary: binary ?? false });
+      localWs.send(buffer, { binary: binary ?? false, compress: false });
     } catch (error) {
       console.error(`[WebSocketHandler] Failed to send to local server:`, (error as Error).message);
       return;
@@ -302,11 +302,11 @@ export class WebSocketHandler {
     try {
       if (opcode === 1) {
         // Text frame
-        localWs.send(data, { binary: false });
+        localWs.send(data, { binary: false, compress: false });
       } else if (opcode === 2) {
         // Binary frame (decode from base64)
         const buffer = Buffer.from(data, "base64");
-        localWs.send(buffer, { binary: true });
+        localWs.send(buffer, { binary: true, compress: false });
       } else if (opcode === 9) {
         // Ping
         localWs.ping(Buffer.from(data, "base64"));

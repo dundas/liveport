@@ -10,8 +10,8 @@ import { logger } from "../logger";
 import { getConfigValue } from "../config";
 import type { ConnectOptions } from "../types";
 
-// Default server URL (production tunnel server)
-const DEFAULT_SERVER_URL = "https://tunnel.liveport.dev";
+// Default server URL (production tunnel server - Hetzner deployment)
+const DEFAULT_SERVER_URL = "https://tunnel.liveport.online";
 
 // Active client reference for graceful shutdown
 let activeClient: TunnelClient | null = null;

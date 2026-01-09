@@ -40,7 +40,14 @@ const defaultConfig: TunnelServerConfig = {
 };
 
 /**
- * Start the tunnel server
+ * Start the tunnel server with dual HTTP/WebSocket servers
+ *
+ * Uses two separate servers to avoid middleware interference:
+ * - WebSocket server (port 8080): Handles ONLY WebSocket upgrade requests
+ * - HTTP server (port 8081): Handles regular HTTP requests via Hono
+ *
+ * This architecture prevents the "RSV1 must be clear" error caused by
+ * HTTP middleware writing responses to WebSocket connections.
  */
 export async function startServer(config: Partial<TunnelServerConfig> = {}): Promise<void> {
   const cfg = { ...defaultConfig, ...config };
@@ -116,66 +123,119 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
 
   const proxyInterceptor = createProxyRequestInterceptor(proxyConfig);
   const proxyConnectHandler = createProxyConnectHandler(proxyConfig);
+  const connectionManager = getConnectionManager();
 
-  // Start HTTP server
-  const server = serve(
+  // =========================================================================
+  // WEBSOCKET SERVER (Port 8080) - Handles WebSocket + proxies HTTP to 8081
+  // =========================================================================
+  // This dedicated server prevents HTTP middleware interference with WebSocket upgrades
+  // For production (Fly.io/Cloudflare), this is the single entry point that routes:
+  // - WebSocket upgrades → handled directly by this server
+  // - Regular HTTP requests → proxied to port 8081 (Hono server)
+  const wsServer = http.createServer((req, res) => {
+    // Proxy regular HTTP requests to the HTTP server on port 8081
+    const proxyReq = http.request(
+      {
+        hostname: 'localhost',
+        port: cfg.port + 1, // 8081
+        path: req.url,
+        method: req.method,
+        headers: req.headers,
+        timeout: 30000, // 30 second timeout
+      },
+      (proxyRes) => {
+        res.writeHead(proxyRes.statusCode || 500, proxyRes.headers);
+        proxyRes.pipe(res);
+
+        // Handle response errors
+        proxyRes.on('error', (err) => {
+          console.error('[WebSocket Server] Response error:', err);
+          if (!res.headersSent) {
+            res.writeHead(502, { 'Content-Type': 'text/plain' });
+            res.end('Bad Gateway');
+          }
+        });
+      }
+    );
+
+    proxyReq.on('timeout', () => {
+      console.error('[WebSocket Server] Proxy timeout to port 8081');
+      proxyReq.destroy();
+      if (!res.headersSent) {
+        res.writeHead(504, { 'Content-Type': 'text/plain' });
+        res.end('Gateway Timeout');
+      }
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error('[WebSocket Server] Proxy error:', err);
+      if (!res.headersSent) {
+        res.writeHead(502, { 'Content-Type': 'text/plain' });
+        res.end('Bad Gateway');
+      }
+    });
+
+    req.pipe(proxyReq);
+  });
+
+  // Handle HTTPS CONNECT proxy requests (for AI agent API proxying)
+  wsServer.on("connect", (req, socket, head) => {
+    proxyConnectHandler(req, socket as unknown as NetSocket, head).catch(() => {
+      (socket as unknown as NetSocket).destroy();
+    });
+  });
+
+  // Create WebSocket server for CLI control connections (/connect path)
+  const controlWss = new WebSocketServer({
+    noServer: true,
+    perMessageDeflate: false, // Disable compression on control channel
+  });
+
+  // Handle WebSocket upgrades
+  wsServer.on("upgrade", (req, socket, head) => {
+    const connectionManager = getConnectionManager();
+
+    if (req.url === "/connect" || req.url?.startsWith("/connect?")) {
+      // CLI control connections
+      controlWss.handleUpgrade(req, socket, head, (ws) => {
+        controlWss.emit('connection', ws, req);
+      });
+    } else {
+      // Public client WebSocket connections (tunneled traffic)
+      handleWebSocketUpgradeEvent(
+        req,
+        socket as unknown as NetSocket,
+        head,
+        connectionManager,
+        cfg.baseDomain
+      );
+    }
+  });
+
+  wsServer.listen(cfg.port, cfg.host, () => {
+    console.log(`WebSocket server listening on ws://${cfg.host}:${cfg.port}`);
+  });
+
+  // =========================================================================
+  // HTTP SERVER (Port 8081) - Handles regular HTTP/HTTPS requests via Hono
+  // =========================================================================
+  const httpPort = cfg.port + 1; // Use port 8081 for HTTP
+
+  serve(
     {
       fetch: httpApp.fetch,
-      port: cfg.port,
+      port: httpPort,
       hostname: cfg.host,
-      createServer: ((serverOptions?: unknown, requestListener?: unknown) => {
-        const options = (serverOptions && typeof serverOptions === "object" ? serverOptions : {}) as http.ServerOptions;
-        const listener = requestListener as ((req: IncomingMessage, res: ServerResponse) => void) | undefined;
-
-        const srv = http.createServer(options, (req, res) => {
-          if (!listener) {
-            res.statusCode = 500;
-            res.end("Server misconfigured");
-            return;
-          }
-          void proxyInterceptor(req, res, async (r, s) => {
-            await listener(r, s);
-          });
-        });
-
-        srv.on("connect", (req, socket, head) => {
-          proxyConnectHandler(req, socket as unknown as NetSocket, head).catch(() => {
-            (socket as unknown as NetSocket).destroy();
-          });
-        });
-
-        // Handle WebSocket upgrade requests for public clients
-        srv.on("upgrade", (req, socket, head) => {
-          // Skip /connect path - it's handled by the dedicated WebSocketServer
-          if (req.url === "/connect" || req.url?.startsWith("/connect?")) {
-            return; // Let WebSocketServer handle it
-          }
-
-          const connectionManager = getConnectionManager();
-          handleWebSocketUpgradeEvent(
-            req,
-            socket as unknown as NetSocket,
-            head,
-            connectionManager,
-            cfg.baseDomain
-          );
-        });
-
-        return srv;
-      }) as unknown as typeof http.createServer,
     },
     (info) => {
       console.log(`HTTP server listening on http://${cfg.host}:${info.port}`);
     }
   );
 
-  // Create WebSocket server on /connect path
-  const wss = new WebSocketServer({
-    server: server as unknown as import("http").Server,
-    path: "/connect",
-  });
-
-  wss.on("connection", (socket: WebSocket, request) => {
+  // =========================================================================
+  // CONTROL WEBSOCKET HANDLER - /connect path for CLI tunnels
+  // =========================================================================
+  controlWss.on("connection", (socket: WebSocket, request) => {
     // Extract headers
     const bridgeKey = request.headers["x-bridge-key"] as string;
     const localPort = parseInt(request.headers["x-local-port"] as string, 10);
@@ -232,11 +292,9 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
     });
   });
 
-  wss.on("error", (err) => {
-    console.error("[WSS] WebSocket server error:", err);
+  controlWss.on("error", (err: Error) => {
+    console.error("[WSS] Control WebSocket server error:", err);
   });
-
-  console.log(`WebSocket server listening on ws://${cfg.host}:${cfg.port}/connect`);
 
   // Start metering service
   const meteringInterval = parseInt(process.env.METERING_SYNC_INTERVAL_MS || "30000", 10);
@@ -273,15 +331,15 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
       conn.socket.close(1001, "Server shutting down");
     }
 
-    // Close WebSocket server
-    wss.close(() => {
-      console.log("WebSocket server closed");
+    // Close WebSocket servers
+    controlWss.close(() => {
+      console.log("Control WebSocket server closed");
+    });
 
-      // Close HTTP server
-      server.close(() => {
-        console.log("HTTP server closed");
-        process.exit(0);
-      });
+    // Close main WebSocket server
+    wsServer.close(() => {
+      console.log("WebSocket server closed");
+      process.exit(0);
     });
 
     // Force exit after 10 seconds

@@ -133,6 +133,8 @@ export class TunnelClient {
       
       this.socket = new WebSocket(wsUrl, {
         headers,
+        // Disable compression on control channel to avoid RSV1 bit issues during relay
+        perMessageDeflate: false,
       });
 
       // Connection timeout

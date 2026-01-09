@@ -14,7 +14,7 @@ info:
     ### Bridge Key Authentication (Agent API)
     Used by AI agents and CLI tools. Pass your bridge key in the `Authorization` header:
     ```
-    Authorization: Bearer lpk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    Authorization: Bearer bk_xxxxxxxxxxxxxxxxxxxx
     ```
   version: 0.1.0
   contact:
@@ -30,11 +30,37 @@ servers:
   - url: http://localhost:3001
     description: Local development
 
+x-internal-architecture:
+  description: |
+    LivePort uses a dual-server architecture to handle WebSocket and HTTP traffic separately:
+
+    **Port 8080 (WebSocket Server)**:
+    - Handles WebSocket upgrade requests directly
+    - Proxies regular HTTP requests internally to port 8081
+    - Single entry point for production deployments (Fly.io, Cloudflare)
+
+    **Port 8081 (HTTP Server)**:
+    - Runs Hono framework for API endpoints
+    - Never sees WebSocket upgrade requests
+    - Zero middleware interference with WebSocket connections
+
+    This architecture prevents "RSV1 must be clear" errors caused by HTTP middleware
+    writing responses to WebSocket connections. All external traffic goes through port 8080.
+
 tags:
   - name: Bridge Keys
     description: Manage bridge keys for tunnel authentication
   - name: Tunnels
     description: View and manage active tunnels
+  - name: WebSocket
+    description: |
+      WebSocket tunneling support for real-time bidirectional communication.
+
+      **Architecture**: LivePort uses a dual-server design that automatically routes WebSocket
+      and HTTP traffic appropriately. This is completely transparent to users - simply connect
+      to your tunnel URL with either HTTP(S) or WebSocket (WS/WSS) protocols.
+
+      See [WebSocket Guide](../WEBSOCKET_GUIDE.md) for detailed documentation.
   - name: Agent API
     description: API endpoints for AI agents and automation
   - name: Health
@@ -65,7 +91,7 @@ paths:
                 keys:
                   - id: "key_abc123"
                     name: "Production Key"
-                    prefix: "lpk_abc12345"
+                    prefix: "bk_abc1"
                     status: "active"
                     expiresAt: "2025-12-31T23:59:59Z"
                     maxUses: 1000
@@ -106,10 +132,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreateKeyResponse'
               example:
-                key: "lpk_abc123def456ghi789jkl012mno345"
+                key: "bk_abc123def456ghi789jkl012mno345"
                 id: "key_xyz789"
                 name: "CI/CD Key"
-                prefix: "lpk_abc12345"
+                prefix: "bk_abc1"
                 expiresAt: "2025-12-27T13:45:00Z"
                 maxUses: 100
                 allowedPort: null
@@ -226,7 +252,7 @@ paths:
                 tunnels:
                   - tunnelId: "tun_abc123"
                     subdomain: "my-app-xyz"
-                    url: "https://my-app-xyz.tunnel.liveport.dev"
+                    url: "https://my-app-xyz.liveport.online"
                     localPort: 3000
                     state: "active"
                     createdAt: "2025-11-27T10:00:00Z"
@@ -306,6 +332,142 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentError'
 
+  /ws:
+    get:
+      summary: WebSocket tunnel connection
+      description: |
+        Establishes a WebSocket connection through your LivePort tunnel.
+
+        ## How to Connect
+
+        Connect to your tunnel URL with the WebSocket protocol:
+
+        ```javascript
+        // Replace with your tunnel URL
+        const ws = new WebSocket('wss://abc123.liveport.dev/your-path');
+        ```
+
+        ## Architecture
+
+        LivePort uses a **dual-server architecture** for maximum reliability:
+        - All traffic enters through port 8080 (production)
+        - WebSocket upgrades are handled directly without middleware interference
+        - Regular HTTP requests are internally proxied to port 8081 (Hono)
+        - This prevents "RSV1 must be clear" errors from HTTP middleware
+
+        **For users**: This is completely transparent. Simply use `https://` or `wss://` URLs as normal.
+
+        ## Features
+
+        - **Automatic Proxying**: WebSocket upgrade requests are automatically detected and proxied to your local server
+        - **Bidirectional Frames**: Full support for text, binary, ping, pong, and close frames
+        - **Raw Byte Piping**: Zero protocol interference - frames are relayed byte-for-byte
+        - **Resource Limits**:
+          - Maximum 100 concurrent WebSocket connections per tunnel
+          - Maximum 10MB frame size
+        - **Subprotocol Support**: WebSocket subprotocols are forwarded to your local server
+
+        ## Frame Types Supported
+
+        - Text frames (opcode 1)
+        - Binary frames (opcode 2)
+        - Ping frames (opcode 9)
+        - Pong frames (opcode 10)
+        - Close frames (opcode 8)
+
+        ## Error Codes
+
+        - `429 Too Many Requests`: Exceeded 100 concurrent connections limit
+        - `1009 Message Too Big`: Frame size exceeded 10MB limit
+        - `502 Bad Gateway`: Unable to connect to local WebSocket server
+
+        ## Full Documentation
+
+        For complete WebSocket documentation including examples and best practices, see:
+        - [WebSocket Guide](../WEBSOCKET_GUIDE.md)
+        - [Architecture Docs](../architecture/websocket-protocol.md)
+
+      operationId: websocketTunnel
+      tags: [WebSocket]
+      parameters:
+        - name: Upgrade
+          in: header
+          required: true
+          description: Must be "websocket"
+          schema:
+            type: string
+            enum: [websocket]
+        - name: Connection
+          in: header
+          required: true
+          description: Must be "Upgrade"
+          schema:
+            type: string
+            enum: [Upgrade]
+        - name: Sec-WebSocket-Key
+          in: header
+          required: true
+          description: WebSocket handshake key
+          schema:
+            type: string
+        - name: Sec-WebSocket-Version
+          in: header
+          required: true
+          description: WebSocket protocol version (typically 13)
+          schema:
+            type: string
+            enum: ["13"]
+        - name: Sec-WebSocket-Protocol
+          in: header
+          required: false
+          description: Requested subprotocol(s)
+          schema:
+            type: string
+      responses:
+        '101':
+          description: |
+            Switching Protocols - WebSocket connection established.
+            The connection is now a bidirectional WebSocket stream.
+          headers:
+            Upgrade:
+              schema:
+                type: string
+                enum: [websocket]
+            Connection:
+              schema:
+                type: string
+                enum: [Upgrade]
+            Sec-WebSocket-Accept:
+              schema:
+                type: string
+              description: WebSocket handshake acceptance key
+            Sec-WebSocket-Protocol:
+              schema:
+                type: string
+              description: Selected subprotocol (if any)
+        '400':
+          description: Bad Request - Invalid WebSocket upgrade headers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too Many Requests - Exceeded 100 concurrent connections per tunnel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Too many WebSocket connections (max 100 per tunnel)"
+        '502':
+          description: Bad Gateway - Unable to connect to local WebSocket server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Unable to connect to local server"
+
   /api/health:
     get:
       summary: Health check
@@ -361,7 +523,7 @@ components:
       bearerFormat: BridgeKey
       description: |
         Bridge key authentication for agent API.
-        Format: `Bearer lpk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+        Format: `Bearer bk_xxxxxxxxxxxxxxxxxxxx`
 
   schemas:
     BridgeKey:
@@ -375,7 +537,7 @@ components:
           description: User-defined key name
         prefix:
           type: string
-          description: First 12 characters of the key (for identification)
+          description: First 8 characters of the key (for identification)
         status:
           type: string
           enum: [active, revoked, expired]
@@ -475,6 +637,10 @@ components:
           type: integer
         bytesTransferred:
           type: integer
+        websocketConnectionCount:
+          type: integer
+          description: Number of active WebSocket connections
+          example: 5
 
     AgentTunnel:
       type: object

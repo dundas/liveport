@@ -90,6 +90,7 @@ export async function GET(request: NextRequest) {
       tunnels: tunnels.map((t) => ({
         id: t.tunnelId,
         subdomain: t.subdomain,
+        url: t.url, // Full URL from tunnel server (includes correct domain)
         name: sanitizeName(t.name),
         localPort: t.localPort,
         state: t.state,
