@@ -160,16 +160,19 @@ export const mechStorageAdapter = (db: MechStorageClient, config?: MechStorageAd
           );
 
           if (idCondition) {
-            // Use direct ID lookup
-            const record = await db.getRecord(table, String(idCondition.value));
-            if (!record) return null;
-            return keysToCamelCase(record as Record<string, unknown>) as any;
+            // Use SQL query instead of REST API (workaround for mech-storage bug)
+            const result = await db.query(
+              `SELECT * FROM "${table}" WHERE id = $1 LIMIT 1`,
+              [String(idCondition.value)]
+            );
+            if (result.rows.length === 0) return null;
+            return keysToCamelCase(result.rows[0] as Record<string, unknown>) as any;
           }
 
-          // Otherwise, fetch all and filter
-          const { records } = await db.getRecords(table, { limit: 100 });
+          // Otherwise, fetch all and filter using SQL
+          const result = await db.query(`SELECT * FROM "${table}" LIMIT 100`);
 
-          for (const record of records) {
+          for (const record of result.rows) {
             if (matchesWhere(record as Record<string, unknown>, whereArr)) {
               return keysToCamelCase(record as Record<string, unknown>) as any;
             }
@@ -182,14 +185,17 @@ export const mechStorageAdapter = (db: MechStorageClient, config?: MechStorageAd
           const table = getTable(model);
           const whereArr = (where || []) as WhereClause[];
 
-          const { records } = await db.getRecords(table, {
-            limit: limit || 100,
-            offset: offset || 0,
-            orderBy: sortBy ? toSnakeCase(sortBy.field) : undefined,
-            orderDir: sortBy?.direction?.toUpperCase() as "ASC" | "DESC" | undefined,
-          });
+          // Use SQL query instead of REST API (workaround for mech-storage bug)
+          const orderByClause = sortBy
+            ? `ORDER BY ${toSnakeCase(sortBy.field)} ${sortBy.direction?.toUpperCase() || "ASC"}`
+            : "";
+          const limitClause = `LIMIT ${limit || 100} OFFSET ${offset || 0}`;
 
-          let filtered = records as Record<string, unknown>[];
+          const result = await db.query(
+            `SELECT * FROM "${table}" ${orderByClause} ${limitClause}`
+          );
+
+          let filtered = result.rows as Record<string, unknown>[];
 
           // Apply where filters if present
           if (whereArr.length > 0) {
