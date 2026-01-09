@@ -294,14 +294,15 @@ export class BridgeKeyRepository {
    * Find a bridge key by its prefix (for validation)
    */
   async findByPrefix(keyPrefix: string): Promise<BridgeKey | null> {
-    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
-      limit: 100,
-    });
-    const record = records.find((r) => r.key_prefix === keyPrefix);
-    if (!record) {
+    // Use SQL query instead of REST API (workaround for mech-storage bug)
+    const result = await this.db.query<BridgeKeyRow>(
+      `SELECT * FROM "${TABLE_NAMES.BRIDGE_KEYS}" WHERE key_prefix = $1 LIMIT 1`,
+      [keyPrefix]
+    );
+    if (result.rows.length === 0) {
       return null;
     }
-    return rowToBridgeKey(record);
+    return rowToBridgeKey(result.rows[0]);
   }
 
   /**
@@ -309,30 +310,32 @@ export class BridgeKeyRepository {
    * @deprecated Use findByKeyPrefix + verifyKey for bcrypt hashes
    */
   async findByKeyHash(keyHash: string): Promise<BridgeKey | null> {
-    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
-      limit: 100,
-    });
-    const record = records.find((r) => r.key_hash === keyHash);
-    if (!record) {
+    // Use SQL query instead of REST API (workaround for mech-storage bug)
+    const result = await this.db.query<BridgeKeyRow>(
+      `SELECT * FROM "${TABLE_NAMES.BRIDGE_KEYS}" WHERE key_hash = $1 LIMIT 1`,
+      [keyHash]
+    );
+    if (result.rows.length === 0) {
       return null;
     }
-    return rowToBridgeKey(record);
+    return rowToBridgeKey(result.rows[0]);
   }
 
   /**
    * Find a bridge key by its prefix (for bcrypt verification)
-   * The prefix is the first 8 characters of the key, used to narrow down
+   * The prefix is the first 12 characters of the key, used to narrow down
    * candidates before verifying with bcrypt.compare()
    */
   async findByKeyPrefix(keyPrefix: string): Promise<BridgeKey | null> {
-    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
-      limit: 100,
-    });
-    const record = records.find((r) => r.key_prefix === keyPrefix);
-    if (!record) {
+    // Use SQL query instead of REST API (workaround for mech-storage bug)
+    const result = await this.db.query<BridgeKeyRow>(
+      `SELECT * FROM "${TABLE_NAMES.BRIDGE_KEYS}" WHERE key_prefix = $1 LIMIT 1`,
+      [keyPrefix]
+    );
+    if (result.rows.length === 0) {
       return null;
     }
-    return rowToBridgeKey(record);
+    return rowToBridgeKey(result.rows[0]);
   }
 
   /**
@@ -355,19 +358,23 @@ export class BridgeKeyRepository {
     const limit = options?.limit || 50;
     const offset = options?.offset || 0;
 
-    const { records, total } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
-      limit: 100, // Get records for filtering (mech-storage may have limits)
-      orderBy: "created_at",
-      orderDir: "DESC",
-    });
+    // Use SQL query instead of REST API (workaround for mech-storage bug)
+    // First get the total count
+    const countResult = await this.db.query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM "${TABLE_NAMES.BRIDGE_KEYS}" WHERE user_id = $1`,
+      [userId]
+    );
+    const total = parseInt(countResult.rows[0]?.count || "0", 10);
 
-    // Filter by user_id client-side
-    const userRecords = records.filter((r) => r.user_id === userId);
-    const paginatedRecords = userRecords.slice(offset, offset + limit);
+    // Then get the paginated results
+    const result = await this.db.query<BridgeKeyRow>(
+      `SELECT * FROM "${TABLE_NAMES.BRIDGE_KEYS}" WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [userId, limit, offset]
+    );
 
     return {
-      keys: paginatedRecords.map(rowToBridgeKey),
-      total: userRecords.length,
+      keys: result.rows.map(rowToBridgeKey),
+      total,
     };
   }
 
@@ -375,21 +382,18 @@ export class BridgeKeyRepository {
    * Find active bridge keys for a user
    */
   async findActiveByUserId(userId: string): Promise<BridgeKey[]> {
-    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
-      limit: 100,
-      orderBy: "created_at",
-      orderDir: "DESC",
-    });
+    // Use SQL query instead of REST API (workaround for mech-storage bug)
+    const now = new Date().toISOString();
+    const result = await this.db.query<BridgeKeyRow>(
+      `SELECT * FROM "${TABLE_NAMES.BRIDGE_KEYS}"
+       WHERE user_id = $1
+       AND status = 'active'
+       AND (expires_at IS NULL OR expires_at > $2)
+       ORDER BY created_at DESC`,
+      [userId, now]
+    );
 
-    const now = new Date();
-    const activeRecords = records.filter((r) => {
-      if (r.user_id !== userId) return false;
-      if (r.status !== "active") return false;
-      if (r.expires_at && new Date(r.expires_at) <= now) return false;
-      return true;
-    });
-
-    return activeRecords.map(rowToBridgeKey);
+    return result.rows.map(rowToBridgeKey);
   }
 
   /**
@@ -479,24 +483,23 @@ export class BridgeKeyRepository {
 
   /**
    * Expire all bridge keys that have passed their expiration date
-   * Note: This is less efficient with REST API, use sparingly
    */
   async expireOldKeys(): Promise<number> {
-    const { records } = await this.db.getRecords<BridgeKeyRow>(TABLE_NAMES.BRIDGE_KEYS, {
-      limit: 100,
-    });
+    // Use SQL query instead of REST API (workaround for mech-storage bug)
+    const now = new Date().toISOString();
 
-    const now = new Date();
-    let expiredCount = 0;
+    // Update all active keys that have expired
+    const result = await this.db.query(
+      `UPDATE "${TABLE_NAMES.BRIDGE_KEYS}"
+       SET status = 'expired', updated_at = $1
+       WHERE status = 'active'
+       AND expires_at IS NOT NULL
+       AND expires_at < $1
+       RETURNING id`,
+      [now]
+    );
 
-    for (const record of records) {
-      if (record.status === "active" && record.expires_at && new Date(record.expires_at) < now) {
-        await this.update(record.id, { status: "expired" });
-        expiredCount++;
-      }
-    }
-
-    return expiredCount;
+    return result.rowCount || 0;
   }
 }
 
