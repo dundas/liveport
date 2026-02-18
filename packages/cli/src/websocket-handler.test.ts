@@ -1,12 +1,12 @@
 /**
  * WebSocket Handler Tests
  *
- * Unit tests for CLI WebSocket handler - TCP connection handling and raw byte relay
+ * Unit tests for CLI WebSocket handler - WebSocket connection handling and message relay.
+ * The implementation uses the 'ws' library, so we mock that module.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "events";
-import net from "net";
 import { WebSocketHandler } from "./websocket-handler";
 import type {
   WebSocketUpgradeMessage,
@@ -14,64 +14,106 @@ import type {
   WebSocketCloseMessage,
 } from "./types";
 
-// Mock net module - define inline to avoid hoisting issues
-vi.mock("net", () => ({
-  default: {
-    connect: vi.fn(),
-  },
-}));
+// Use vi.hoisted so MockWebSocket is available before vi.mock is hoisted
+const { MockWebSocket } = vi.hoisted(() => {
+  const { EventEmitter } = require("events");
 
-// Get reference to mocked net.connect
-const mockedNet = vi.mocked(net);
+  class MockWebSocket extends EventEmitter {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
 
-// Mock TCP Socket implementation
-class MockTcpSocket extends EventEmitter {
-  destroyed = false;
-  writable = true;
-  readyState = 1; // OPEN (from WebSocket constants)
+    readyState = 1; // OPEN
+    url: string;
+    protocol: string;
 
-  write = vi.fn((data: string | Buffer) => {
-    return true;
-  });
+    send = vi.fn();
+    close = vi.fn();
+    terminate = vi.fn();
+    ping = vi.fn();
+    pong = vi.fn();
 
-  destroy = vi.fn(() => {
-    this.destroyed = true;
-    this.writable = false;
-  });
+    constructor(url: string, protocols?: string | string[], options?: any) {
+      super();
+      this.url = url;
+      this.protocol = "";
+      // Store construction args for assertion
+      MockWebSocket._lastConstructorArgs = { url, protocols, options };
+      MockWebSocket._instances.push(this);
+    }
 
-  close = vi.fn((code?: number, reason?: string) => {
-    this.destroyed = true;
-    this.writable = false;
-  });
-}
+    // Track instances for multi-connection tests
+    static _instances: MockWebSocket[] = [];
+    static _lastConstructorArgs: {
+      url: string;
+      protocols?: string | string[];
+      options?: any;
+    } | null = null;
 
-describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
+    static resetTracking() {
+      MockWebSocket._instances = [];
+      MockWebSocket._lastConstructorArgs = null;
+    }
+  }
+
+  return { MockWebSocket };
+});
+
+// Mock the 'ws' module so WebSocketHandler gets our MockWebSocket
+vi.mock("ws", () => {
+  return {
+    default: MockWebSocket,
+    WebSocket: MockWebSocket,
+  };
+});
+
+describe("WebSocket Handler - WebSocket Connection and Message Relay", () => {
   let handler: WebSocketHandler;
   let sendToTunnel: ReturnType<typeof vi.fn>;
-  let mockSocket: MockTcpSocket;
+  let mockWs: MockWebSocket;
+
+  /**
+   * Helper: create handler.handleUpgrade(...) and have the mock emit "open"
+   * so the connection is established. Returns the MockWebSocket instance.
+   */
+  async function establishConnection(
+    id: string,
+    path = "/ws",
+    headers: Record<string, string> = {},
+    subprotocol?: string
+  ): Promise<MockWebSocket> {
+    const upgradeMessage: WebSocketUpgradeMessage = {
+      type: "websocket_upgrade",
+      id,
+      timestamp: Date.now(),
+      payload: { path, headers, subprotocol },
+    };
+
+    const promise = handler.handleUpgrade(upgradeMessage);
+
+    // The constructor was called synchronously; grab the instance
+    const ws = MockWebSocket._instances[MockWebSocket._instances.length - 1];
+
+    // Emit "open" in next tick so the handler's promise resolves
+    setImmediate(() => ws.emit("open"));
+
+    await promise;
+    return ws;
+  }
 
   beforeEach(() => {
+    MockWebSocket.resetTracking();
     sendToTunnel = vi.fn();
     handler = new WebSocketHandler(sendToTunnel, 3000);
-    mockSocket = new MockTcpSocket();
-
-    // Reset mocks
-    vi.clearAllMocks();
-
-    // Mock net.connect to return our mock socket and emit connect event
-    mockedNet.connect.mockImplementation(() => {
-      // Emit connect event in next tick to simulate async behavior
-      setImmediate(() => mockSocket.emit("connect"));
-      return mockSocket as any;
-    });
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("TCP Connection Creation", () => {
-    it("should create TCP connection with correct host and port", async () => {
+  describe("WebSocket Connection Creation", () => {
+    it("should create WebSocket connection with correct URL and port", async () => {
       const upgradeMessage: WebSocketUpgradeMessage = {
         type: "websocket_upgrade",
         id: "test-ws-123",
@@ -82,23 +124,12 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
         },
       };
 
-      // Setup mock to emit upgrade response after connect
-      mockedNet.connect.mockImplementation(() => {
-        setImmediate(() => {
-          mockSocket.emit("connect");
-          setImmediate(() => {
-            mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-          });
-        });
-        return mockSocket as any;
-      });
+      const promise = handler.handleUpgrade(upgradeMessage);
+      const ws = MockWebSocket._instances[0];
+      setImmediate(() => ws.emit("open"));
+      await promise;
 
-      await handler.handleUpgrade(upgradeMessage);
-
-      expect(mockedNet.connect).toHaveBeenCalledWith({
-        host: "localhost",
-        port: 3000,
-      });
+      expect(ws.url).toBe("ws://localhost:3000/ws");
     });
 
     it("should wait for connection establishment", async () => {
@@ -112,26 +143,18 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
         },
       };
 
-      // Delay connect event to test waiting
-      mockedNet.connect.mockImplementation(() => {
-        setTimeout(() => {
-          mockSocket.emit("connect");
-          setImmediate(() => {
-            mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-          });
-        }, 100);
-        return mockSocket as any;
-      });
+      const promise = handler.handleUpgrade(upgradeMessage);
+      const ws = MockWebSocket._instances[0];
+
+      // Delay the "open" event to verify waiting behavior
+      setTimeout(() => ws.emit("open"), 100);
 
       const start = Date.now();
-      await handler.handleUpgrade(upgradeMessage);
+      await promise;
       const elapsed = Date.now() - start;
 
       expect(elapsed).toBeGreaterThanOrEqual(90); // Allow some margin
-      expect(mockSocket.write).toHaveBeenCalled();
     });
-
-    // Connection timeout test removed - timeout logic tested in integration tests
 
     it("should handle connection errors", async () => {
       const upgradeMessage: WebSocketUpgradeMessage = {
@@ -144,10 +167,13 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
         },
       };
 
-      // Emit error immediately
-      setTimeout(() => mockSocket.emit("error", new Error("ECONNREFUSED")), 0);
+      const promise = handler.handleUpgrade(upgradeMessage);
+      const ws = MockWebSocket._instances[0];
 
-      await handler.handleUpgrade(upgradeMessage);
+      // Emit error in next tick
+      setImmediate(() => ws.emit("error", new Error("ECONNREFUSED")));
+
+      await promise;
 
       // Should send error response
       expect(sendToTunnel).toHaveBeenCalledWith(
@@ -163,154 +189,61 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
     });
   });
 
-  describe("HTTP WebSocket Upgrade Request", () => {
-    it("should send correctly formatted upgrade request", async () => {
-      const upgradeMessage: WebSocketUpgradeMessage = {
-        type: "websocket_upgrade",
-        id: "test-ws-upgrade",
-        timestamp: Date.now(),
-        payload: {
-          path: "/socket",
-          headers: {},
-        },
-      };
+  describe("WebSocket Construction Options", () => {
+    it("should connect to the correct path", async () => {
+      await establishConnection("test-ws-path", "/socket");
 
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        // Simulate upgrade response
-        setTimeout(() => {
-          const response = "HTTP/1.1 101 Switching Protocols\r\n\r\n";
-          mockSocket.emit("data", Buffer.from(response));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade(upgradeMessage);
-
-      expect(mockSocket.write).toHaveBeenCalled();
-      const upgradeRequest = mockSocket.write.mock.calls[0][0] as string;
-
-      expect(upgradeRequest).toContain("GET /socket HTTP/1.1");
-      expect(upgradeRequest).toContain("Host: localhost:3000");
-      expect(upgradeRequest).toContain("Upgrade: websocket");
-      expect(upgradeRequest).toContain("Connection: Upgrade");
-      expect(upgradeRequest).toContain("Sec-WebSocket-Key:");
-      expect(upgradeRequest).toContain("Sec-WebSocket-Version: 13");
-      expect(upgradeRequest).toContain("\r\n\r\n");
+      expect(MockWebSocket._lastConstructorArgs!.url).toBe("ws://localhost:3000/socket");
     });
 
-    it("should include custom headers in upgrade request", async () => {
-      const upgradeMessage: WebSocketUpgradeMessage = {
-        type: "websocket_upgrade",
-        id: "test-ws-headers",
-        timestamp: Date.now(),
-        payload: {
-          path: "/ws",
-          headers: {
-            "X-Custom-Header": "custom-value",
-            "Authorization": "Bearer token123",
-          },
-        },
-      };
+    it("should pass custom headers (excluding protocol headers)", async () => {
+      await establishConnection("test-ws-headers", "/ws", {
+        "X-Custom-Header": "custom-value",
+        "Authorization": "Bearer token123",
+      });
 
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade(upgradeMessage);
-
-      const upgradeRequest = mockSocket.write.mock.calls[0][0] as string;
-
-      expect(upgradeRequest).toContain("X-Custom-Header: custom-value");
-      expect(upgradeRequest).toContain("Authorization: Bearer token123");
+      const opts = MockWebSocket._lastConstructorArgs!.options;
+      expect(opts.headers["X-Custom-Header"]).toBe("custom-value");
+      expect(opts.headers["Authorization"]).toBe("Bearer token123");
     });
 
     it("should skip protocol headers from custom headers", async () => {
-      const upgradeMessage: WebSocketUpgradeMessage = {
-        type: "websocket_upgrade",
-        id: "test-ws-skip-headers",
-        timestamp: Date.now(),
-        payload: {
-          path: "/ws",
-          headers: {
-            "Host": "should-be-ignored",
-            "Upgrade": "should-be-ignored",
-            "Connection": "should-be-ignored",
-            "Sec-WebSocket-Key": "should-be-ignored",
-            "X-Custom": "should-be-included",
-          },
-        },
-      };
+      await establishConnection("test-ws-skip-headers", "/ws", {
+        "Host": "should-be-ignored",
+        "Upgrade": "should-be-ignored",
+        "Connection": "should-be-ignored",
+        "Sec-WebSocket-Key": "should-be-ignored",
+        "X-Custom": "should-be-included",
+      });
 
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade(upgradeMessage);
-
-      const upgradeRequest = mockSocket.write.mock.calls[0][0] as string;
-
-      // Custom header should be included
-      expect(upgradeRequest).toContain("X-Custom: should-be-included");
-
-      // Protocol headers should not be duplicated with custom values
-      const hostMatches = upgradeRequest.match(/Host: localhost:3000/g);
-      expect(hostMatches?.length).toBe(1);
+      const opts = MockWebSocket._lastConstructorArgs!.options;
+      expect(opts.headers["X-Custom"]).toBe("should-be-included");
+      // Protocol headers should have been filtered out
+      expect(opts.headers["Host"]).toBeUndefined();
+      expect(opts.headers["Upgrade"]).toBeUndefined();
+      expect(opts.headers["Connection"]).toBeUndefined();
+      expect(opts.headers["Sec-WebSocket-Key"]).toBeUndefined();
     });
 
     it("should include subprotocol if specified", async () => {
-      const upgradeMessage: WebSocketUpgradeMessage = {
-        type: "websocket_upgrade",
-        id: "test-ws-subprotocol",
-        timestamp: Date.now(),
-        payload: {
-          path: "/ws",
-          headers: {},
-          subprotocol: "chat",
-        },
-      };
+      await establishConnection("test-ws-subprotocol", "/ws", {}, "chat");
 
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
+      const args = MockWebSocket._lastConstructorArgs!;
+      expect(args.protocols).toEqual(["chat"]);
+    });
 
-      await handler.handleUpgrade(upgradeMessage);
+    it("should disable per-message deflate", async () => {
+      await establishConnection("test-ws-deflate", "/ws");
 
-      const upgradeRequest = mockSocket.write.mock.calls[0][0] as string;
-      expect(upgradeRequest).toContain("Sec-WebSocket-Protocol: chat");
+      const opts = MockWebSocket._lastConstructorArgs!.options;
+      expect(opts.perMessageDeflate).toBe(false);
     });
   });
 
-  describe("Upgrade Response Parsing", () => {
-    it("should accept 101 status code", async () => {
-      const upgradeMessage: WebSocketUpgradeMessage = {
-        type: "websocket_upgrade",
-        id: "test-ws-101",
-        timestamp: Date.now(),
-        payload: {
-          path: "/ws",
-          headers: {},
-        },
-      };
+  describe("Upgrade Response", () => {
+    it("should send success response on successful connection", async () => {
+      await establishConnection("test-ws-101");
 
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade(upgradeMessage);
-
-      // Should send success response
       expect(sendToTunnel).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "websocket_upgrade_response",
@@ -322,10 +255,10 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
       );
     });
 
-    it("should reject non-101 status code", async () => {
+    it("should send error response on connection failure", async () => {
       const upgradeMessage: WebSocketUpgradeMessage = {
         type: "websocket_upgrade",
-        id: "test-ws-404",
+        id: "test-ws-fail",
         timestamp: Date.now(),
         payload: {
           path: "/ws",
@@ -333,95 +266,37 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
         },
       };
 
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 404 Not Found\r\n\r\n"));
-        }, 0);
-      }, 0);
+      const promise = handler.handleUpgrade(upgradeMessage);
+      const ws = MockWebSocket._instances[0];
+      setImmediate(() => ws.emit("error", new Error("Connection refused")));
+      await promise;
 
-      await handler.handleUpgrade(upgradeMessage);
-
-      // Should send error response
       expect(sendToTunnel).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "websocket_upgrade_response",
           payload: expect.objectContaining({
             accepted: false,
             statusCode: 502,
-            reason: expect.stringContaining("Upgrade failed with status 404"),
+            reason: expect.stringContaining("Connection refused"),
           }),
         })
       );
     });
-
-    it("should handle invalid HTTP response", async () => {
-      const upgradeMessage: WebSocketUpgradeMessage = {
-        type: "websocket_upgrade",
-        id: "test-ws-invalid",
-        timestamp: Date.now(),
-        payload: {
-          path: "/ws",
-          headers: {},
-        },
-      };
-
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("INVALID RESPONSE\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade(upgradeMessage);
-
-      // Should send error response
-      expect(sendToTunnel).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "websocket_upgrade_response",
-          payload: expect.objectContaining({
-            accepted: false,
-            statusCode: 502,
-            reason: expect.stringContaining("Invalid HTTP response"),
-          }),
-        })
-      );
-    });
-
-    // Upgrade response timeout test removed - complex interaction between real setTimeout and fake timers
-    // causes test to hang. Timeout logic tested manually in integration tests.
   });
 
-  describe("Raw Byte Relay - Local to Tunnel", () => {
+  describe("Message Relay - Local to Tunnel", () => {
+    let ws: MockWebSocket;
+
     beforeEach(async () => {
-      // Establish connection first
-      const upgradeMessage: WebSocketUpgradeMessage = {
-        type: "websocket_upgrade",
-        id: "test-ws-relay",
-        timestamp: Date.now(),
-        payload: {
-          path: "/ws",
-          headers: {},
-        },
-      };
-
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade(upgradeMessage);
-
+      ws = await establishConnection("test-ws-relay");
       // Clear sendToTunnel calls from setup
       sendToTunnel.mockClear();
     });
 
-    it("should capture data events and relay as WebSocketDataMessage", () => {
+    it("should relay messages from local server as WebSocketDataMessage", () => {
       const testData = Buffer.from("Hello from local server!");
-
-      mockSocket.emit("data", testData);
+      // The ws library emits "message" with (data, isBinary)
+      ws.emit("message", testData, false);
 
       expect(sendToTunnel).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -434,10 +309,9 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
       );
     });
 
-    it("should encode raw bytes as base64", () => {
+    it("should encode message data as base64", () => {
       const binaryData = Buffer.from([0x01, 0x02, 0x03, 0xff, 0xfe]);
-
-      mockSocket.emit("data", binaryData);
+      ws.emit("message", binaryData, true);
 
       const call = sendToTunnel.mock.calls[0][0] as WebSocketDataMessage;
       expect(call.payload.data).toBe(binaryData.toString("base64"));
@@ -451,13 +325,13 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
       const MAX_FRAME_SIZE = 10 * 1024 * 1024;
       const oversizedChunk = Buffer.alloc(MAX_FRAME_SIZE + 1, "a");
 
-      mockSocket.emit("data", oversizedChunk);
+      ws.emit("message", oversizedChunk, true);
 
       // Should not send message
       expect(sendToTunnel).not.toHaveBeenCalled();
 
-      // Should destroy socket
-      expect(mockSocket.destroy).toHaveBeenCalled();
+      // Should terminate WebSocket
+      expect(ws.terminate).toHaveBeenCalled();
 
       // Connection should be cleaned up
       expect(handler.getConnectionCount()).toBe(0);
@@ -467,55 +341,53 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
       const MAX_FRAME_SIZE = 10 * 1024 * 1024;
       const maxChunk = Buffer.alloc(MAX_FRAME_SIZE, "a");
 
-      mockSocket.emit("data", maxChunk);
+      ws.emit("message", maxChunk, true);
 
       // Should send message
       expect(sendToTunnel).toHaveBeenCalled();
 
-      // Should not destroy socket
-      expect(mockSocket.destroy).not.toHaveBeenCalled();
+      // Should not terminate WebSocket
+      expect(ws.terminate).not.toHaveBeenCalled();
     });
 
-    it("should update stats on data relay", () => {
+    it("should update stats on message relay", () => {
       const chunk1 = Buffer.from("First chunk");
       const chunk2 = Buffer.from("Second chunk");
 
-      mockSocket.emit("data", chunk1);
-      mockSocket.emit("data", chunk2);
+      ws.emit("message", chunk1, false);
+      ws.emit("message", chunk2, false);
 
       const stats = handler.getStats();
       expect(stats.totalFrames).toBe(2);
       expect(stats.totalBytes).toBe(chunk1.length + chunk2.length);
     });
+
+    it("should handle string messages from local server", () => {
+      const textData = "Hello text message";
+      ws.emit("message", textData, false);
+
+      expect(sendToTunnel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "websocket_data",
+          id: "test-ws-relay",
+          payload: expect.objectContaining({
+            data: Buffer.from(textData).toString("base64"),
+          }),
+        })
+      );
+    });
   });
 
-  describe("Raw Byte Relay - Tunnel to Local", () => {
+  describe("Message Relay - Tunnel to Local", () => {
+    let ws: MockWebSocket;
+
     beforeEach(async () => {
-      // Establish connection first
-      const upgradeMessage: WebSocketUpgradeMessage = {
-        type: "websocket_upgrade",
-        id: "test-ws-data",
-        timestamp: Date.now(),
-        payload: {
-          path: "/ws",
-          headers: {},
-        },
-      };
-
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade(upgradeMessage);
-
-      // Clear write calls from setup
-      mockSocket.write.mockClear();
+      ws = await establishConnection("test-ws-data");
+      // Clear send calls from setup
+      ws.send.mockClear();
     });
 
-    it("should decode base64 and write raw bytes to socket", () => {
+    it("should decode base64 and send to local WebSocket", () => {
       const rawBytes = Buffer.from("Hello from tunnel!");
       const base64 = rawBytes.toString("base64");
 
@@ -530,7 +402,10 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
 
       handler.handleData(dataMessage);
 
-      expect(mockSocket.write).toHaveBeenCalledWith(rawBytes);
+      expect(ws.send).toHaveBeenCalledWith(
+        rawBytes,
+        expect.objectContaining({ binary: false, compress: false })
+      );
     });
 
     it("should preserve binary data through base64 roundtrip", () => {
@@ -548,12 +423,12 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
 
       handler.handleData(dataMessage);
 
-      const written = mockSocket.write.mock.calls[0][0] as Buffer;
-      expect(written).toEqual(binaryData);
+      const sentBuffer = ws.send.mock.calls[0][0] as Buffer;
+      expect(sentBuffer).toEqual(binaryData);
     });
 
-    it("should not write to destroyed socket", () => {
-      mockSocket.destroyed = true;
+    it("should not send to non-open WebSocket", () => {
+      ws.readyState = MockWebSocket.CLOSED;
 
       const dataMessage: WebSocketDataMessage = {
         type: "websocket_data",
@@ -566,12 +441,12 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
 
       handler.handleData(dataMessage);
 
-      // Should not write
-      expect(mockSocket.write).not.toHaveBeenCalled();
+      // Should not send
+      expect(ws.send).not.toHaveBeenCalled();
     });
 
-    it("should not write to non-writable socket", () => {
-      mockSocket.writable = false;
+    it("should not send to closing WebSocket", () => {
+      ws.readyState = MockWebSocket.CLOSING;
 
       const dataMessage: WebSocketDataMessage = {
         type: "websocket_data",
@@ -584,8 +459,8 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
 
       handler.handleData(dataMessage);
 
-      // Should not write
-      expect(mockSocket.write).not.toHaveBeenCalled();
+      // Should not send
+      expect(ws.send).not.toHaveBeenCalled();
     });
 
     it("should handle data for non-existent connection", () => {
@@ -601,8 +476,8 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
       // Should not throw
       expect(() => handler.handleData(dataMessage)).not.toThrow();
 
-      // Should not write
-      expect(mockSocket.write).not.toHaveBeenCalled();
+      // Should not send
+      expect(ws.send).not.toHaveBeenCalled();
     });
 
     it("should update stats on data received", () => {
@@ -629,34 +504,18 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
     });
   });
 
-  describe("Socket Event Handlers", () => {
+  describe("WebSocket Event Handlers", () => {
+    let ws: MockWebSocket;
+
     beforeEach(async () => {
-      // Establish connection first
-      const upgradeMessage: WebSocketUpgradeMessage = {
-        type: "websocket_upgrade",
-        id: "test-ws-events",
-        timestamp: Date.now(),
-        payload: {
-          path: "/ws",
-          headers: {},
-        },
-      };
-
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade(upgradeMessage);
-
+      ws = await establishConnection("test-ws-events");
       // Clear calls from setup
       sendToTunnel.mockClear();
     });
 
-    it("should send WebSocketCloseMessage on socket close", () => {
-      mockSocket.emit("close");
+    it("should send WebSocketCloseMessage on close event", () => {
+      // ws library emits "close" with (code, reason) where reason is a Buffer
+      ws.emit("close", 1000, Buffer.from("Connection closed"));
 
       expect(sendToTunnel).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -671,24 +530,8 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
       );
     });
 
-    it("should send WebSocketCloseMessage on socket end", () => {
-      mockSocket.emit("end");
-
-      expect(sendToTunnel).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "websocket_close",
-          id: "test-ws-events",
-          payload: expect.objectContaining({
-            code: 1000,
-            reason: "Connection ended",
-            initiator: "server",
-          }),
-        })
-      );
-    });
-
     it("should send WebSocketCloseMessage with code 1011 on error", () => {
-      mockSocket.emit("error", new Error("Socket error"));
+      ws.emit("error", new Error("Socket error"));
 
       expect(sendToTunnel).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -706,7 +549,7 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
     it("should cleanup connection on close", () => {
       expect(handler.getConnectionCount()).toBe(1);
 
-      mockSocket.emit("close");
+      ws.emit("close", 1000, Buffer.from("bye"));
 
       expect(handler.getConnectionCount()).toBe(0);
     });
@@ -714,7 +557,7 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
     it("should cleanup connection on error", () => {
       expect(handler.getConnectionCount()).toBe(1);
 
-      mockSocket.emit("error", new Error("Test error"));
+      ws.emit("error", new Error("Test error"));
 
       expect(handler.getConnectionCount()).toBe(0);
     });
@@ -725,105 +568,36 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
       expect(handler.getConnectionCount()).toBe(0);
 
       // Create first connection
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade({
-        type: "websocket_upgrade",
-        id: "ws-1",
-        timestamp: Date.now(),
-        payload: { path: "/ws", headers: {} },
-      });
-
+      await establishConnection("ws-1");
       expect(handler.getConnectionCount()).toBe(1);
 
       // Create second connection
-      const mockSocket2 = new MockTcpSocket();
-      mockedNet.connect.mockReturnValue(mockSocket2);
-
-      setTimeout(() => {
-        mockSocket2.emit("connect");
-        setTimeout(() => {
-          mockSocket2.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade({
-        type: "websocket_upgrade",
-        id: "ws-2",
-        timestamp: Date.now(),
-        payload: { path: "/ws", headers: {} },
-      });
-
+      await establishConnection("ws-2");
       expect(handler.getConnectionCount()).toBe(2);
     });
 
     it("should close all connections", async () => {
       // Create two connections
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade({
-        type: "websocket_upgrade",
-        id: "ws-1",
-        timestamp: Date.now(),
-        payload: { path: "/ws", headers: {} },
-      });
-
-      const mockSocket2 = new MockTcpSocket();
-      mockedNet.connect.mockReturnValue(mockSocket2);
-
-      setTimeout(() => {
-        mockSocket2.emit("connect");
-        setTimeout(() => {
-          mockSocket2.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
-
-      await handler.handleUpgrade({
-        type: "websocket_upgrade",
-        id: "ws-2",
-        timestamp: Date.now(),
-        payload: { path: "/ws", headers: {} },
-      });
+      const ws1 = await establishConnection("ws-1");
+      const ws2 = await establishConnection("ws-2");
 
       expect(handler.getConnectionCount()).toBe(2);
 
       // Close all
       handler.closeAll(1000, "Shutting down");
 
-      expect(mockSocket.close).toHaveBeenCalledWith(1000, "Shutting down");
-      expect(mockSocket2.close).toHaveBeenCalledWith(1000, "Shutting down");
+      expect(ws1.close).toHaveBeenCalledWith(1000, "Shutting down");
+      expect(ws2.close).toHaveBeenCalledWith(1000, "Shutting down");
       expect(handler.getConnectionCount()).toBe(0);
     });
 
     it("should get stats across all connections", async () => {
       // Create connection
-      setTimeout(() => {
-        mockSocket.emit("connect");
-        setTimeout(() => {
-          mockSocket.emit("data", Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n"));
-        }, 0);
-      }, 0);
+      const ws = await establishConnection("ws-stats");
 
-      await handler.handleUpgrade({
-        type: "websocket_upgrade",
-        id: "ws-stats",
-        timestamp: Date.now(),
-        payload: { path: "/ws", headers: {} },
-      });
-
-      // Send some data
-      mockSocket.emit("data", Buffer.from("chunk1"));
-      mockSocket.emit("data", Buffer.from("chunk2"));
+      // Emit some messages from local server
+      ws.emit("message", Buffer.from("chunk1"), false);
+      ws.emit("message", Buffer.from("chunk2"), false);
 
       const stats = handler.getStats();
       expect(stats.connectionCount).toBe(1);
@@ -865,7 +639,7 @@ describe("WebSocket Handler - TCP Connection and Raw Byte Relay", () => {
     });
 
     it("should correctly roundtrip encode/decode", () => {
-      const original = Buffer.from("Test data with special chars: 🚀🔥💯");
+      const original = Buffer.from("Test data with special chars: \u{1F680}\u{1F525}\u{1F4AF}");
       const base64 = original.toString("base64");
       const decoded = Buffer.from(base64, "base64");
 
