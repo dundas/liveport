@@ -212,7 +212,19 @@ describe("WebSocket Integration Tests", () => {
     const sentMessages: any[] = [];
     const mockTunnelWs = new MockTunnelWebSocket();
     mockTunnelWs.send = vi.fn((data: string) => {
-      sentMessages.push(JSON.parse(data));
+      const msg = JSON.parse(data);
+      sentMessages.push(msg);
+      // Auto-respond to WebSocket upgrade requests (simulating CLI behavior)
+      if (msg.type === "websocket_upgrade") {
+        setTimeout(() => {
+          connectionManager.resolveWebSocketUpgrade(msg.id, {
+            type: "websocket_upgrade_response",
+            id: msg.id,
+            timestamp: Date.now(),
+            payload: { accepted: true, statusCode: 101 },
+          });
+        }, 10);
+      }
     });
 
     // Register tunnel
@@ -236,11 +248,14 @@ describe("WebSocket Integration Tests", () => {
       ws.on("open", () => resolve());
     });
 
+    // Wait for upgrade to resolve and relay handlers to be set up
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     // Send text message
     ws.send("Hello, WebSocket!");
 
     // Wait for message to be relayed
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     // Verify raw bytes were relayed to CLI via websocket_data message
     const dataMessages = sentMessages.filter((msg) => msg.type === "websocket_data");
@@ -263,7 +278,19 @@ describe("WebSocket Integration Tests", () => {
     const sentMessages: any[] = [];
     const mockTunnelWs = new MockTunnelWebSocket();
     mockTunnelWs.send = vi.fn((data: string) => {
-      sentMessages.push(JSON.parse(data));
+      const msg = JSON.parse(data);
+      sentMessages.push(msg);
+      // Auto-respond to WebSocket upgrade requests (simulating CLI behavior)
+      if (msg.type === "websocket_upgrade") {
+        setTimeout(() => {
+          connectionManager.resolveWebSocketUpgrade(msg.id, {
+            type: "websocket_upgrade_response",
+            id: msg.id,
+            timestamp: Date.now(),
+            payload: { accepted: true, statusCode: 101 },
+          });
+        }, 10);
+      }
     });
 
     // Register tunnel
@@ -287,12 +314,15 @@ describe("WebSocket Integration Tests", () => {
       ws.on("open", () => resolve());
     });
 
+    // Wait for upgrade to resolve and relay handlers to be set up
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     // Send binary message
     const binaryData = Buffer.from([0x01, 0x02, 0x03, 0x04]);
     ws.send(binaryData);
 
     // Wait for message to be relayed
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     // Verify raw bytes were relayed to CLI via websocket_data message
     const dataMessages = sentMessages.filter((msg) => msg.type === "websocket_data");
@@ -372,7 +402,19 @@ describe("WebSocket Integration Tests", () => {
     const sentMessages: any[] = [];
     const mockTunnelWs = new MockTunnelWebSocket();
     mockTunnelWs.send = vi.fn((data: string) => {
-      sentMessages.push(JSON.parse(data));
+      const msg = JSON.parse(data);
+      sentMessages.push(msg);
+      // Auto-respond to WebSocket upgrade requests (simulating CLI behavior)
+      if (msg.type === "websocket_upgrade") {
+        setTimeout(() => {
+          connectionManager.resolveWebSocketUpgrade(msg.id, {
+            type: "websocket_upgrade_response",
+            id: msg.id,
+            timestamp: Date.now(),
+            payload: { accepted: true, statusCode: 101 },
+          });
+        }, 10);
+      }
     });
 
     // Register tunnel
@@ -395,6 +437,9 @@ describe("WebSocket Integration Tests", () => {
     await new Promise<void>((resolve) => {
       ws.on("open", () => resolve());
     });
+
+    // Wait for upgrade to resolve and close handler to be registered
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     // Verify WebSocket is registered
     expect(connectionManager.getWebSocketCount(subdomain!)).toBe(1);
@@ -422,8 +467,22 @@ describe("WebSocket Integration Tests", () => {
   test("should track bytes transferred for frames", async () => {
     const connectionManager = getConnectionManager();
 
-    // Create mock tunnel WebSocket
+    // Create mock tunnel WebSocket with auto-upgrade response
     const mockTunnelWs = new MockTunnelWebSocket();
+    mockTunnelWs.send = vi.fn((data: string) => {
+      const msg = JSON.parse(data);
+      // Auto-respond to WebSocket upgrade requests (simulating CLI behavior)
+      if (msg.type === "websocket_upgrade") {
+        setTimeout(() => {
+          connectionManager.resolveWebSocketUpgrade(msg.id, {
+            type: "websocket_upgrade_response",
+            id: msg.id,
+            timestamp: Date.now(),
+            payload: { accepted: true, statusCode: 101 },
+          });
+        }, 10);
+      }
+    });
 
     // Register tunnel
     const subdomain = connectionManager.register(
@@ -450,12 +509,15 @@ describe("WebSocket Integration Tests", () => {
       ws.on("open", () => resolve());
     });
 
+    // Wait for upgrade to resolve and relay handlers to be set up
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     // Send message
     const testMessage = "Test message for byte tracking";
     ws.send(testMessage);
 
     // Wait for processing
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     // Verify bytes were tracked
     const updatedConnection = connectionManager.findBySubdomain(subdomain!);

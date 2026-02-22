@@ -66,7 +66,7 @@ new LivePortAgent(config: LivePortAgentConfig)
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
 | `key` | string | ✅ | - | Bridge key for authentication |
-| `apiUrl` | string | ❌ | `https://app.liveport.dev` | API base URL |
+| `apiUrl` | string | ❌ | `https://liveport.dev` | API base URL |
 | `timeout` | number | ❌ | `30000` | Default timeout in milliseconds |
 
 **Example:**
@@ -74,7 +74,7 @@ new LivePortAgent(config: LivePortAgentConfig)
 ```typescript
 const agent = new LivePortAgent({
   key: 'lpk_abc123...',
-  apiUrl: 'https://app.liveport.dev',
+  apiUrl: 'https://liveport.dev',
   timeout: 60000
 });
 ```

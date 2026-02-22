@@ -200,6 +200,204 @@ async function handleWebSocketUpgrade(
 }
 
 /**
+ * Forward request to tunnel client
+ * Extracted to allow reuse from multiple routes
+ */
+async function forwardToTunnel(
+  c: Context,
+  cfg: HttpHandlerConfig
+): Promise<Response> {
+  const connectionManager = getConnectionManager();
+  const host = c.req.header("host") || "";
+  const subdomain = extractSubdomain(host, cfg.baseDomain);
+
+  // If not a tunnel subdomain, return 404
+  if (!subdomain) {
+    return c.json(
+      {
+        error: "Not Found",
+        message: "Invalid tunnel URL",
+      },
+      404
+    );
+  }
+
+  // Find the tunnel connection
+  const connection = connectionManager.findBySubdomain(subdomain);
+
+  if (!connection) {
+    return c.json(
+      {
+        error: "Bad Gateway",
+        message: "Tunnel not found or inactive",
+      },
+      502
+    );
+  }
+
+  if (connection.state !== "active") {
+    return c.json(
+      {
+        error: "Bad Gateway",
+        message: `Tunnel is ${connection.state}`,
+      },
+      502
+    );
+  }
+
+  // Generate request ID
+  const requestId = `${subdomain}:${nanoid(10)}`;
+
+  // Build request payload
+  const method = c.req.method;
+  const url = new URL(c.req.url);
+  const path = url.pathname + url.search;
+
+  // Get headers
+  const headers = headersToObject(c.req.raw.headers);
+
+  // Add forwarding headers
+  headers["x-forwarded-for"] = c.req.header("x-forwarded-for") || c.req.header("cf-connecting-ip") || "unknown";
+  headers["x-forwarded-proto"] = "https";
+  headers["x-forwarded-host"] = host;
+  headers["x-request-id"] = requestId;
+
+  // Rewrite host to localhost
+  headers["host"] = `localhost:${connection.localPort}`;
+
+  // Get body if present (with size limit)
+  let body: string | undefined;
+  let requestBodySize = 0;
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    try {
+      const bodyBytes = await c.req.arrayBuffer();
+      if (bodyBytes.byteLength > MAX_BODY_SIZE) {
+        logger.warn(
+          { requestId, size: bodyBytes.byteLength, maxSize: MAX_BODY_SIZE },
+          "Request body too large"
+        );
+        return c.json(
+          {
+            error: "Payload Too Large",
+            message: `Request body exceeds ${MAX_BODY_SIZE / 1024 / 1024}MB limit`,
+          },
+          413
+        );
+      }
+      if (bodyBytes.byteLength > 0) {
+        requestBodySize = bodyBytes.byteLength;
+        body = Buffer.from(bodyBytes).toString("base64");
+      }
+    } catch (err) {
+      logger.warn({ err, requestId }, "Failed to parse request body");
+    }
+  }
+
+  // Create request message
+  const requestMessage: HttpRequestMessage = {
+    type: "http_request",
+    id: requestId,
+    timestamp: Date.now(),
+    payload: {
+      method,
+      path,
+      headers,
+      body,
+    },
+  };
+
+  // Send to tunnel client
+  if (connection.socket.readyState !== connection.socket.OPEN) {
+    return c.json(
+      {
+        error: "Bad Gateway",
+        message: "Tunnel connection lost",
+      },
+      502
+    );
+  }
+
+  connection.socket.send(JSON.stringify(requestMessage));
+  connectionManager.incrementRequestCount(subdomain);
+
+  // Wait for response
+  try {
+    const response = await connectionManager.registerPendingRequest(
+      requestId,
+      cfg.requestTimeout
+    );
+
+    // Build response
+    const responseHeaders = new Headers();
+    for (const [key, value] of Object.entries(response.headers || {})) {
+      // Skip hop-by-hop headers
+      if (
+        ![
+          "transfer-encoding",
+          "connection",
+          "keep-alive",
+          "upgrade",
+          "proxy-authenticate",
+          "proxy-authorization",
+          "te",
+          "trailer",
+        ].includes(key.toLowerCase())
+      ) {
+        responseHeaders.set(key, value);
+      }
+    }
+
+    // Decode body if present
+    let responseBody: Uint8Array | null = null;
+    let responseBodySize = 0;
+    if (response.body) {
+      responseBody = new Uint8Array(Buffer.from(response.body, "base64"));
+      responseBodySize = responseBody.byteLength;
+    }
+
+    // Track bytes transferred for metering (request + response)
+    const totalBytes = requestBodySize + responseBodySize;
+    connectionManager.addBytesTransferred(subdomain, totalBytes);
+
+    return new Response(responseBody, {
+      status: response.status,
+      headers: responseHeaders,
+    });
+  } catch (err) {
+    const error = err as Error;
+
+    if (error.message === "Request timeout") {
+      return c.json(
+        {
+          error: "Gateway Timeout",
+          message: "Request to local server timed out",
+        },
+        504
+      );
+    }
+
+    if (error.message === "Tunnel disconnected") {
+      return c.json(
+        {
+          error: "Bad Gateway",
+          message: "Tunnel disconnected during request",
+        },
+        502
+      );
+    }
+
+    console.error(`[HTTP] Error proxying request: ${error.message}`);
+    return c.json(
+      {
+        error: "Bad Gateway",
+        message: "Error proxying request",
+      },
+      502
+    );
+  }
+}
+
+/**
  * Create the HTTP handler app
  */
 export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono {
@@ -208,7 +406,18 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
   const app = new Hono();
 
   // Health check endpoint
-  app.get("/health", (c) => {
+  // NOTE: Only return server health if NOT a tunnel subdomain
+  // If it IS a tunnel subdomain, forward to backend
+  app.get("/health", async (c) => {
+    const host = c.req.header("host") || "";
+    const subdomain = extractSubdomain(host, cfg.baseDomain);
+
+    // If this is a tunnel subdomain, forward to backend
+    if (subdomain) {
+      return forwardToTunnel(c, cfg);
+    }
+
+    // Otherwise, return tunnel server's own health status
     const metering = getMeteringHealth();
     return c.json({
       status: metering.status === "healthy" ? "healthy" : "degraded",
@@ -389,194 +598,14 @@ export function createHttpHandler(config: Partial<HttpHandlerConfig> = {}): Hono
   // If it is reached, something is misconfigured
 
   // Catch-all handler for proxied requests
+  // Delegates to forwardToTunnel helper function
+  // WebSocket upgrade requests are handled here when received via Hono (e.g., in tests).
+  // In production, they are caught earlier by the HTTP server's 'upgrade' event.
   app.all("*", async (c) => {
-    const host = c.req.header("host") || "";
-    const subdomain = extractSubdomain(host, cfg.baseDomain);
-
-    // If not a tunnel subdomain, return 404
-    if (!subdomain) {
-      return c.json(
-        {
-          error: "Not Found",
-          message: "Invalid tunnel URL",
-        },
-        404
-      );
+    if (isWebSocketUpgrade(c.req.raw)) {
+      return handleWebSocketUpgrade(c, cfg);
     }
-
-    // Find the tunnel connection
-    const connection = connectionManager.findBySubdomain(subdomain);
-
-    if (!connection) {
-      return c.json(
-        {
-          error: "Bad Gateway",
-          message: "Tunnel not found or inactive",
-        },
-        502
-      );
-    }
-
-    if (connection.state !== "active") {
-      return c.json(
-        {
-          error: "Bad Gateway",
-          message: `Tunnel is ${connection.state}`,
-        },
-        502
-      );
-    }
-
-    // Generate request ID
-    const requestId = `${subdomain}:${nanoid(10)}`;
-
-    // Build request payload
-    const method = c.req.method;
-    const url = new URL(c.req.url);
-    const path = url.pathname + url.search;
-
-    // Get headers
-    const headers = headersToObject(c.req.raw.headers);
-
-    // Add forwarding headers
-    headers["x-forwarded-for"] = c.req.header("x-forwarded-for") || c.req.header("cf-connecting-ip") || "unknown";
-    headers["x-forwarded-proto"] = "https";
-    headers["x-forwarded-host"] = host;
-    headers["x-request-id"] = requestId;
-
-    // Rewrite host to localhost
-    headers["host"] = `localhost:${connection.localPort}`;
-
-    // Get body if present (with size limit)
-    let body: string | undefined;
-    let requestBodySize = 0;
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-      try {
-        const bodyBytes = await c.req.arrayBuffer();
-        if (bodyBytes.byteLength > MAX_BODY_SIZE) {
-          logger.warn(
-            { requestId, size: bodyBytes.byteLength, maxSize: MAX_BODY_SIZE },
-            "Request body too large"
-          );
-          return c.json(
-            {
-              error: "Payload Too Large",
-              message: `Request body exceeds ${MAX_BODY_SIZE / 1024 / 1024}MB limit`,
-            },
-            413
-          );
-        }
-        if (bodyBytes.byteLength > 0) {
-          requestBodySize = bodyBytes.byteLength;
-          body = Buffer.from(bodyBytes).toString("base64");
-        }
-      } catch (err) {
-        logger.warn({ err, requestId }, "Failed to parse request body");
-      }
-    }
-
-    // Create request message
-    const requestMessage: HttpRequestMessage = {
-      type: "http_request",
-      id: requestId,
-      timestamp: Date.now(),
-      payload: {
-        method,
-        path,
-        headers,
-        body,
-      },
-    };
-
-    // Send to tunnel client
-    if (connection.socket.readyState !== connection.socket.OPEN) {
-      return c.json(
-        {
-          error: "Bad Gateway",
-          message: "Tunnel connection lost",
-        },
-        502
-      );
-    }
-
-    connection.socket.send(JSON.stringify(requestMessage));
-    connectionManager.incrementRequestCount(subdomain);
-
-    // Wait for response
-    try {
-      const response = await connectionManager.registerPendingRequest(
-        requestId,
-        cfg.requestTimeout
-      );
-
-      // Build response
-      const responseHeaders = new Headers();
-      for (const [key, value] of Object.entries(response.headers || {})) {
-        // Skip hop-by-hop headers
-        if (
-          ![
-            "transfer-encoding",
-            "connection",
-            "keep-alive",
-            "upgrade",
-            "proxy-authenticate",
-            "proxy-authorization",
-            "te",
-            "trailer",
-          ].includes(key.toLowerCase())
-        ) {
-          responseHeaders.set(key, value);
-        }
-      }
-
-      // Decode body if present
-      let responseBody: Uint8Array | null = null;
-      let responseBodySize = 0;
-      if (response.body) {
-        responseBody = new Uint8Array(Buffer.from(response.body, "base64"));
-        responseBodySize = responseBody.byteLength;
-      }
-
-      // Track bytes transferred for metering (request + response)
-      const totalBytes = requestBodySize + responseBodySize;
-      connectionManager.addBytesTransferred(subdomain, totalBytes);
-
-      return new Response(responseBody, {
-        status: response.status,
-        headers: responseHeaders,
-      });
-    } catch (err) {
-      const error = err as Error;
-
-      if (error.message === "Request timeout") {
-        return c.json(
-          {
-            error: "Gateway Timeout",
-            message: "Request to local server timed out",
-          },
-          504
-        );
-      }
-
-      if (error.message === "Tunnel disconnected") {
-        return c.json(
-          {
-            error: "Bad Gateway",
-            message: "Tunnel disconnected during request",
-          },
-          502
-        );
-      }
-
-      console.error(`[HTTP] Error proxying request: ${error.message}`);
-      return c.json(
-        {
-          error: "Bad Gateway",
-          message: "Error proxying request",
-        },
-        502
-      );
-    }
+    return forwardToTunnel(c, cfg);
   });
 
   return app;

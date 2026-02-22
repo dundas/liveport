@@ -31,7 +31,7 @@ export interface Tunnel {
 export interface LivePortAgentConfig {
   /** Bridge key for authentication */
   key: string;
-  /** API base URL (default: https://app.liveport.dev) */
+  /** API base URL (default: https://liveport.dev) */
   apiUrl?: string;
   /** Tunnel server URL for connect() (default: https://tunnel.liveport.online) */
   tunnelUrl?: string;
@@ -143,7 +143,7 @@ export class LivePortAgent {
 
     this.config = {
       key: config.key,
-      apiUrl: config.apiUrl || "https://app.liveport.dev",
+      apiUrl: config.apiUrl || "https://liveport.dev",
       tunnelUrl: config.tunnelUrl || "https://tunnel.liveport.online",
       timeout: config.timeout || 30000,
     };

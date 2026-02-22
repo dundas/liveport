@@ -8,7 +8,7 @@ LivePort enables AI agents to test applications running on your localhost throug
 
 ### 1. Get a Bridge Key
 
-Sign up at [app.liveport.dev](https://app.liveport.dev) and create a bridge key from the dashboard.
+Sign up at [liveport.dev](https://liveport.dev) and create a bridge key from the dashboard.
 
 ### 2. Install the CLI
 
