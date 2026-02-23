@@ -12,7 +12,10 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "migrate": "tsx scripts/migrate.ts up",
     "migrate:status": "tsx scripts/migrate.ts status",
-    "migrate:rollback": "tsx scripts/migrate.ts rollback"
+    "migrate:rollback": "tsx scripts/migrate.ts rollback",
+    "brain": "claude --project . /autonomous-bootup",
+    "brain:sync": "memory-sync",
+    "brain:daemon": "memory-sync-daemon --interval 30m"
   },
   "keywords": [
     "tunnel",
@@ -29,6 +32,7 @@
   "devDependencies": {
     "@playwright/test": "^1.57.0",
     "@types/node": "^20.10.0",
+    "agentbootup": "^0.8.0",
     "dotenv": "^17.2.3",
     "playwright": "^1.57.0",
     "prettier": "^3.1.0",
