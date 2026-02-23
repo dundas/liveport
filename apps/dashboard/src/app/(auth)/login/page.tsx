@@ -35,8 +35,8 @@ export default function LoginPage() {
       // On success, redirect to dashboard
       router.push("/dashboard");
       router.refresh();
-    } catch (err: any) {
-      setError(err?.message || "Invalid email or password");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Invalid email or password");
     } finally {
       setIsLoading(false);
     }
@@ -47,8 +47,8 @@ export default function LoginPage() {
     try {
       await loginWithGitHub();
       // GitHub OAuth redirects automatically
-    } catch (err: any) {
-      setError(err?.message || "Failed to sign in with GitHub");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to sign in with GitHub");
       setIsLoading(false);
     }
   };

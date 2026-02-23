@@ -5,7 +5,7 @@ import { isUserSuperuser } from "@/lib/superuser";
 /**
  * List all users (admin only)
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   const session = await getServerSession();
 
   if (!session?.user) {

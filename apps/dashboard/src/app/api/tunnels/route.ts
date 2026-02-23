@@ -18,7 +18,7 @@ const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 /**
  * GET /api/tunnels - List active tunnels for the authenticated user
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   // Get session
   const session = await getServerSession();
 

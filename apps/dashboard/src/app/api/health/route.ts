@@ -119,7 +119,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     // Determine overall status based on checks
     const dbUp = dbCheck.status === "up";
-    const redisUp = redisCheck.status === "up" || redisCheck.status === "skipped";
 
     if (!dbUp && redisCheck.status === "down") {
       health.status = "unhealthy";

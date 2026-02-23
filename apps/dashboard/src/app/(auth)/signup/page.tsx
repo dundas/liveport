@@ -36,8 +36,8 @@ export default function SignupPage() {
       // On success, redirect to dashboard
       router.push("/dashboard");
       router.refresh();
-    } catch (err: any) {
-      setError(err?.message || "Failed to create account");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create account");
     } finally {
       setIsLoading(false);
     }
@@ -48,8 +48,8 @@ export default function SignupPage() {
     try {
       await loginWithGitHub();
       // GitHub OAuth redirects automatically
-    } catch (err: any) {
-      setError(err?.message || "Failed to sign in with GitHub");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to sign in with GitHub");
       setIsLoading(false);
     }
   };

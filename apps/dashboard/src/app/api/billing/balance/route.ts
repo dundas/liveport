@@ -62,12 +62,6 @@ export async function GET() {
       };
     }
 
-    // Calculate how much of the free tier has been used
-    const freeTierUsed = {
-      tunnelSeconds: Math.min(usage.tunnelSeconds, FREE_TIER.tunnelSeconds),
-      bandwidthBytes: Math.min(usage.bandwidthBytes, FREE_TIER.bandwidthBytes),
-    };
-
     // Calculate remaining free tier
     const freeTierRemaining = {
       tunnelSeconds: Math.max(0, FREE_TIER.tunnelSeconds - usage.tunnelSeconds),
