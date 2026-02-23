@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getServerSession } from "@/lib/auth-server";
 import { isUserSuperuser } from "@/lib/superuser";
 
 /**
  * List all users (admin only)
  */
 export async function GET(request: NextRequest) {
-  const headersList = await headers();
-  const session = await auth.api.getSession({ headers: headersList });
+  const session = await getServerSession();
 
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -1,14 +1,12 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getServerSession } from "@/lib/auth-server";
 import { isUserSuperuser } from "@/lib/superuser";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default async function AdminPage() {
   // Verify superuser access
-  const headersList = await headers();
-  const session = await auth.api.getSession({ headers: headersList });
+  const session = await getServerSession();
 
   if (!session?.user) {
     redirect("/login");

@@ -6,8 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
+import { getServerSession } from "@/lib/auth-server";
 import { getBridgeKeyRepository } from "@/lib/db";
 import { getLogger } from "@/lib/logger";
 
@@ -25,8 +24,7 @@ export async function DELETE(
   
   try {
     // Get session
-    const headersList = await headers();
-    const session = await auth.api.getSession({ headers: headersList });
+    const session = await getServerSession();
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

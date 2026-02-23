@@ -47,7 +47,7 @@ export class MechStorageClient {
     this.config = {
       apiKey: config.apiKey,
       appId: config.appId,
-      baseUrl: config.baseUrl || "https://storage.mechdna.net/api",
+      baseUrl: config.baseUrl || "https://storage.mechdna.net",
     };
   }
 
@@ -55,7 +55,7 @@ export class MechStorageClient {
    * Get the base URL for API requests
    */
   private getBaseUrl(): string {
-    return `${this.config.baseUrl}/apps/${this.config.appId}/postgresql`;
+    return `${this.config.baseUrl}/api/apps/${this.config.appId}/postgresql`;
   }
 
   /**

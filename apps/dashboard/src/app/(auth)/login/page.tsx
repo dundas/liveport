@@ -14,11 +14,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { signIn } from "@/lib/auth-client";
+import { useAuth } from "@/lib/auth-client";
 import { Github, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { signIn, loginWithGitHub } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -30,19 +31,12 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const result = await signIn.email({
-        email,
-        password,
-      });
-
-      if (result.error) {
-        setError(result.error.message || "Invalid email or password");
-      } else {
-        router.push("/dashboard");
-        router.refresh();
-      }
-    } catch (err) {
-      setError("An error occurred. Please try again.");
+      await signIn(email, password);
+      // On success, redirect to dashboard
+      router.push("/dashboard");
+      router.refresh();
+    } catch (err: any) {
+      setError(err?.message || "Invalid email or password");
     } finally {
       setIsLoading(false);
     }
@@ -51,12 +45,10 @@ export default function LoginPage() {
   const handleGithubSignIn = async () => {
     setIsLoading(true);
     try {
-      await signIn.social({
-        provider: "github",
-        callbackURL: "/dashboard",
-      });
-    } catch (err) {
-      setError("Failed to sign in with GitHub");
+      await loginWithGitHub();
+      // GitHub OAuth redirects automatically
+    } catch (err: any) {
+      setError(err?.message || "Failed to sign in with GitHub");
       setIsLoading(false);
     }
   };

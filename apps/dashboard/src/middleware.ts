@@ -11,6 +11,7 @@ const publicPaths = [
   "/verify-email",
   "/pricing",
   "/api/auth",
+  "/api/agent", // Agent API uses Bearer token auth, not session cookies
   "/api/docs",
   "/api/health",
   "/api/cli",
@@ -32,9 +33,9 @@ export function middleware(request: NextRequest) {
   );
 
   // Get session token from cookie (may have __Secure- prefix in production)
-  const sessionToken = 
-    request.cookies.get("__Secure-better-auth.session_token") ||
-    request.cookies.get("better-auth.session_token");
+  const sessionToken =
+    request.cookies.get("__Secure-session") ||
+    request.cookies.get("session");
 
   // If accessing protected route without session, redirect to login
   if (!isPublicPath && !sessionToken) {

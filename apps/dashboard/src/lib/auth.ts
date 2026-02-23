@@ -1,79 +1,76 @@
-import { betterAuth } from "better-auth";
-import { MechStorageClient, getEmailClient } from "@liveport/shared";
-import { mechStorageAdapter } from "@liveport/shared/auth";
+import { createClearAuthNode } from "clearauth/node";
 
-// Initialize database client
-const db = new MechStorageClient({
-  appId: process.env.MECH_APPS_APP_ID!,
-  apiKey: process.env.MECH_APPS_API_KEY!,
-  baseUrl: process.env.MECH_APPS_URL || "https://storage.mechdna.net/api",
-});
+// Validate required environment variables
+if (!process.env.AUTH_SECRET) {
+  throw new Error("AUTH_SECRET is required for ClearAuth");
+}
 
-// Build social providers config (only include if credentials are set)
-const socialProviders: Record<string, { clientId: string; clientSecret: string }> = {};
+if (!process.env.MECH_APPS_APP_ID || !process.env.MECH_APPS_API_KEY) {
+  throw new Error("MECH_APPS_APP_ID and MECH_APPS_API_KEY are required for database connection");
+}
+
+// Get base URL for OAuth redirects
+const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || "http://localhost:3001";
+
+// Build OAuth providers config
+const oauthProviders: {
+  github?: { clientId: string; clientSecret: string; redirectUri: string };
+  google?: { clientId: string; clientSecret: string; redirectUri: string };
+} = {};
 
 if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
-  socialProviders.github = {
+  oauthProviders.github = {
     clientId: process.env.GITHUB_CLIENT_ID,
     clientSecret: process.env.GITHUB_CLIENT_SECRET,
+    redirectUri: `${baseUrl}/api/auth/callback/github`,
   };
 }
 
-export const auth = betterAuth({
-  database: mechStorageAdapter(db),
-  emailAndPassword: {
-    enabled: true,
-    requireEmailVerification: !!process.env.CIRCLEINBOX_API_KEY, // Enable if email is configured
-    sendResetPassword: async ({ user, url }) => {
-      if (!process.env.CIRCLEINBOX_API_KEY) {
-        console.warn("CIRCLEINBOX_API_KEY not set, skipping password reset email");
-        return;
-      }
-      try {
-        const emailClient = getEmailClient();
-        const result = await emailClient.sendPasswordReset(user.email, url);
-        if (!result.success) {
-          console.error("Failed to send password reset email:", result.error);
-          throw new Error(result.error?.message || "Failed to send email");
-        }
-      } catch (error) {
-        console.error("Email sending error:", error);
-        throw error;
-      }
-    },
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  oauthProviders.google = {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri: `${baseUrl}/api/auth/callback/google`,
+  };
+}
+
+export const auth = createClearAuthNode({
+  secret: process.env.AUTH_SECRET,
+  baseUrl,
+  database: {
+    appId: process.env.MECH_APPS_APP_ID,
+    apiKey: process.env.MECH_APPS_API_KEY,
+    baseUrl: process.env.MECH_APPS_URL,
   },
-  emailVerification: {
-    sendVerificationEmail: async ({ user, url }) => {
-      if (!process.env.CIRCLEINBOX_API_KEY) {
-        console.warn("CIRCLEINBOX_API_KEY not set, skipping verification email");
-        return;
-      }
-      try {
-        const emailClient = getEmailClient();
-        const result = await emailClient.sendEmailConfirmation(user.email, url);
-        if (!result.success) {
-          console.error("Failed to send verification email:", result.error);
-          throw new Error(result.error?.message || "Failed to send email");
-        }
-      } catch (error) {
-        console.error("Email sending error:", error);
-        throw error;
-      }
-    },
-    sendOnSignUp: true,
-  },
-  socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
-    updateAge: 60 * 60 * 24, // Update session every 24 hours
   },
+  oauth: Object.keys(oauthProviders).length > 0 ? oauthProviders : undefined,
+  // TODO: Add email verification support for ClearAuth
+  // ClearAuth handles email verification differently than Better Auth
 });
 
-export type Session = typeof auth.$Infer.Session;
+/**
+ * Session type from ClearAuth
+ */
+export type Session = {
+  id: string;
+  userId: string;
+  expiresAt: Date;
+  ipAddress?: string;
+  userAgent?: string;
+};
 
 /**
- * User type extended with role field
+ * User type from ClearAuth with LivePort extensions
  */
-export type User = typeof auth.$Infer.Session.user & {
+export type User = {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  name?: string;
+  avatarUrl?: string;
+  githubId?: string;
+  googleId?: string;
   role?: "user" | "superuser";
 };

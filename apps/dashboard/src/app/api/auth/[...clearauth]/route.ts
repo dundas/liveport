@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { toNextJsHandler } from "better-auth/next-js";
+import { handleClearAuthRequest } from "clearauth";
 import { NextRequest } from "next/server";
 import {
   getClientIP,
@@ -8,14 +8,12 @@ import {
   rateLimitedResponse,
 } from "@/lib/rate-limit";
 
-const authHandler = toNextJsHandler(auth);
-
 // Rate limit configuration for sensitive auth endpoints
 const RATE_LIMITED_ENDPOINTS = {
-  "forget-password": AuthRateLimits.passwordReset,
-  "reset-password": AuthRateLimits.passwordReset,
-  "sign-in": AuthRateLimits.login,
-  "sign-up": AuthRateLimits.signup,
+  "/register": AuthRateLimits.signup,
+  "/login": AuthRateLimits.login,
+  "/reset-password": AuthRateLimits.passwordReset,
+  "/request-reset": AuthRateLimits.passwordReset,
 } as const;
 
 export async function POST(req: NextRequest) {
@@ -34,7 +32,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return authHandler.POST(req);
+  return handleClearAuthRequest(req, auth);
 }
 
-export const GET = authHandler.GET;
+export async function GET(req: NextRequest) {
+  return handleClearAuthRequest(req, auth);
+}

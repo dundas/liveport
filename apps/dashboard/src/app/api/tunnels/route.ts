@@ -5,8 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getServerSession } from "@/lib/auth-server";
 import { getBridgeKeyRepository } from "@/lib/db";
 import { getLogger } from "@/lib/logger";
 
@@ -21,9 +20,7 @@ const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
  */
 export async function GET(request: NextRequest) {
   // Get session
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
+  const session = await getServerSession();
 
   if (!session?.user) {
     return NextResponse.json(

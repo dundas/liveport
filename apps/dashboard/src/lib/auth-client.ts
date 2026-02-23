@@ -1,13 +1,21 @@
-import { createAuthClient } from "better-auth/react";
+/**
+ * ClearAuth Client
+ *
+ * Client-side authentication utilities for React components.
+ * Re-exports ClearAuth's React hooks and utilities.
+ */
 
-export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001",
-});
+export {
+  AuthProvider,
+  useAuth,
+  useUser,
+  useIsAuthenticated,
+} from "clearauth/react";
 
-export const {
-  signIn,
-  signUp,
-  signOut,
-  useSession,
-  getSession,
-} = authClient;
+/**
+ * Base URL for auth API endpoints
+ * ClearAuth expects routes at /api/auth/[...clearauth]
+ */
+export const AUTH_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL
+  ? `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth`
+  : "/api/auth";

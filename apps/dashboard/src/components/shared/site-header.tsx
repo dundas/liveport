@@ -1,13 +1,9 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getServerSession } from "@/lib/auth-server";
 
 export async function SiteHeader() {
-  const headersList = await headers();
-  const session = await auth.api.getSession({
-    headers: headersList,
-  });
+  const session = await getServerSession();
 
   return (
     <header className="flex h-20 items-center justify-between border-b border-border px-6 lg:px-12 bg-background/80 backdrop-blur-sm sticky top-0 z-50">

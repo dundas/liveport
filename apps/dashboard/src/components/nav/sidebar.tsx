@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Home, Key, Radio, Settings, LogOut, CreditCard } from "lucide-react";
-import { useSession, signOut } from "@/lib/auth-client";
+import { useAuth } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
@@ -18,7 +18,7 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { data: session } = useSession();
+  const { user, signOut } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
@@ -57,11 +57,11 @@ export function Sidebar() {
       <div className="border-t border-border p-4">
         <div className="flex items-center gap-3 px-3 py-2">
           <div className="flex h-8 w-8 items-center justify-center border border-primary bg-black text-primary text-sm font-mono uppercase">
-            {session?.user?.name?.[0]?.toUpperCase() || session?.user?.email?.[0]?.toUpperCase() || "?"}
+            {user?.name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || "?"}
           </div>
           <div className="flex-1 truncate">
-            <p className="text-sm font-mono uppercase">{session?.user?.name || "User"}</p>
-            <p className="text-xs text-muted-foreground font-mono truncate">{session?.user?.email || ""}</p>
+            <p className="text-sm font-mono uppercase">{user?.name || "User"}</p>
+            <p className="text-xs text-muted-foreground font-mono truncate">{user?.email || ""}</p>
           </div>
         </div>
         <Button

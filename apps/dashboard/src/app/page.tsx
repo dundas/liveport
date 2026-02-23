@@ -1,16 +1,12 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getServerSession } from "@/lib/auth-server";
 import { InstallCommand } from "@/components/landing/install-command";
 import { TerminalMockup } from "@/components/landing/terminal-mockup";
 import { ExternalLink } from "lucide-react";
 
 export default async function LandingPage() {
-  const headersList = await headers();
-  const session = await auth.api.getSession({
-    headers: headersList,
-  });
+  const session = await getServerSession();
 
   return (
     <div className="min-h-screen flex flex-col font-mono bg-background text-foreground selection:bg-primary selection:text-black">

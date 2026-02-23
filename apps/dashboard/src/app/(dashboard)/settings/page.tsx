@@ -5,14 +5,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useSession } from "@/lib/auth-client";
+import { useAuth } from "@/lib/auth-client";
 import { Loader2 } from "lucide-react";
 
 export default function SettingsPage() {
-  const { data: session, isPending } = useSession();
-  const [name, setName] = useState(session?.user?.name || "");
+  const { user, loading } = useAuth();
+  const [name, setName] = useState(user?.name || "");
 
-  if (isPending) {
+  if (loading) {
     return (
       <div className="p-6 flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -52,7 +52,7 @@ export default function SettingsPage() {
               <Input
                 id="email"
                 type="email"
-                value={session?.user?.email || ""}
+                value={user?.email || ""}
                 disabled
               />
               <p className="text-xs text-muted-foreground">
