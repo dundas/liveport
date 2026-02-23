@@ -37,9 +37,9 @@ jobs:
         env:
           # Dummy build-time values — Next.js evaluates modules during build
           # but these are never used at runtime (Vercel uses real secrets)
-          AUTH_SECRET: "build-time-placeholder-not-used-at-runtime"
-          MECH_APPS_APP_ID: "build-placeholder"
-          MECH_APPS_API_KEY: "build-placeholder"
+          AUTH_SECRET: "build-time-placeholder-32-chars-min"
+          MECH_APPS_APP_ID: "00000000-0000-0000-0000-000000000000"
+          MECH_APPS_API_KEY: "00000000-0000-0000-0000-000000000000"
           NEXT_PUBLIC_APP_URL: "https://liveport.dev"
 
       - name: Lint
