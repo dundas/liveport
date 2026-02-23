@@ -1,6 +1,22 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
+  "globalEnv": [
+    "AUTH_SECRET",
+    "MECH_APPS_APP_ID",
+    "MECH_APPS_API_KEY",
+    "MECH_APPS_URL",
+    "REDIS_URL",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "NEXT_PUBLIC_APP_URL",
+    "NEXT_PUBLIC_BASE_URL",
+    "BASE_URL",
+    "SENTRY_DSN",
+    "SUPERUSER_EMAILS"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
