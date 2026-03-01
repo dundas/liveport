@@ -36,7 +36,7 @@ liveport connect <port> [options]
 |------|-------------|
 | `-k, --key <key>` | Bridge key for authentication |
 | `-s, --server <url>` | Tunnel server URL |
-| `-r, --region <region>` | Server region |
+| `-r, --region <region>` | Server region (coming soon) |
 
 **Authentication priority:**
 1. `--key` CLI flag
