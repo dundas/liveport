@@ -24,7 +24,7 @@ The agent creates the tunnel directly using a WebSocket connection. No CLI requi
 import { LivePortAgent } from '@liveport/agent-sdk';
 
 const agent = new LivePortAgent({
-  key: process.env.LIVEPORT_KEY!,
+  key: process.env.LIVEPORT_BRIDGE_KEY!,
 });
 
 // Connect to local port 3000 and get a public URL
@@ -179,7 +179,7 @@ All HTTP methods, headers, and body content are transparently proxied. WebSocket
 
 6. **Always clean up with `disconnect()`** — Call `disconnect()` when done to cancel pending polls and close WebSocket connections.
 
-7. **Use environment variables** — Store bridge keys in `LIVEPORT_KEY` or `LIVEPORT_BRIDGE_KEY`, never hardcode them.
+7. **Use environment variables** — Store bridge keys in `LIVEPORT_BRIDGE_KEY` (canonical) or `LIVEPORT_KEY` (also accepted), never hardcode them.
 
 8. **Check tunnel expiration** — Tunnels have an `expiresAt` field. Plan accordingly for long-running sessions.
 

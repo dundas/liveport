@@ -40,21 +40,21 @@ liveport config delete <key>     Delete config value
 import { LivePortAgent } from '@liveport/agent-sdk';
 
 const agent = new LivePortAgent({
-  key: process.env.LIVEPORT_KEY!,
+  key: process.env.LIVEPORT_BRIDGE_KEY!,
   apiUrl: 'https://liveport.dev',          // optional
   tunnelUrl: 'https://tunnel.liveport.online', // optional, for connect()
   timeout: 30000,                           // optional
 });
 
 // Option A: Agent creates tunnel directly (no CLI needed)
-const tunnel = await agent.connect(3000);
-await agent.waitForReady(tunnel);          // polls until reachable end-to-end
-// Run tests/workflows against tunnel.url
+const tunnelA = await agent.connect(3000);
+await agent.waitForReady(tunnelA);         // polls until reachable end-to-end
+// Run tests/workflows against tunnelA.url
 await agent.disconnect();
 
 // Option B: Wait for developer-created tunnel (CLI creates it)
-const tunnel = await agent.waitForTunnel({ timeout: 30000, pollInterval: 1000 });
-console.log(tunnel.url);  // https://abc123.liveport.online
+const tunnelB = await agent.waitForTunnel({ timeout: 30000, pollInterval: 1000 });
+console.log(tunnelB.url);  // https://abc123.liveport.online
 
 // List tunnels
 const tunnels = await agent.listTunnels();
@@ -117,8 +117,8 @@ Connection: `WSS /connect` with headers `X-Bridge-Key`, `X-Local-Port`
 |------|-----------|-------------|
 | `connected` | Server→Client | Tunnel established (tunnelId, subdomain, url, expiresAt) |
 | `error` | Server→Client | Error (code, message, fatal, retryAfter?) |
-| `heartbeat` | Client→Server | Keep-alive (requestCount) |
-| `heartbeat_ack` | Server→Client | Heartbeat response |
+| `heartbeat` | Server→Client (CLI) / Server→SDK | Server sends heartbeat; CLI also sends one every 10s with requestCount |
+| `heartbeat_ack` | Client→Server | Heartbeat acknowledgment response |
 | `http_request` | Server→Client | Forward HTTP request (method, path, headers, body base64) |
 | `http_response` | Client→Server | Return HTTP response (status, headers, body base64) |
 | `websocket_upgrade` | Server→Client | WebSocket upgrade request (path, headers, subprotocol) |
@@ -131,11 +131,7 @@ Connection: `WSS /connect` with headers `X-Bridge-Key`, `X-Local-Port`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/health` | Server health check (connections, uptime, metering) |
-| GET | `/_internal/tunnels` | List active tunnels (dev only) |
-| GET | `/_internal/metering/health` | Metering service health |
-| GET | `/api/tunnels/by-key/:keyId` | Get tunnels for a key (internal, requires X-Api-Secret) |
-| POST | `/api/proxy/token` | Mint proxy token (internal, requires X-Api-Secret) |
+| GET | `/health` | Server health check (connections, uptime) |
 | GET | `/api/tls-check?domain=` | On-demand TLS cert validation |
 | ALL | `*` | Catch-all: proxies to tunnel by subdomain |
 
