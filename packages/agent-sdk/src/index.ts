@@ -207,13 +207,16 @@ export class LivePortAgent {
           if (message.type === "connected" && !settled) {
             clearTimeout(connectTimeout);
             settled = true;
+            const payload = message.payload;
             const tunnel: AgentTunnel = {
-              tunnelId: message.payload.tunnelId,
-              subdomain: message.payload.subdomain,
-              url: message.payload.url,
+              tunnelId: payload.tunnelId,
+              subdomain: payload.subdomain,
+              url: payload.url,
               localPort: port,
-              createdAt: new Date(),
-              expiresAt: new Date(message.payload.expiresAt),
+              // Use server-provided createdAt if the server sends it; fall back to client time
+              // (ConnectedPayload doesn't include createdAt today, but may in a future server version)
+              createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : new Date(),
+              expiresAt: new Date(payload.expiresAt),
             };
             resolve(tunnel);
           } else if (message.type === "error" && message.payload?.fatal && !settled) {
@@ -533,13 +536,29 @@ export class LivePortAgent {
    * Parse tunnel response into AgentTunnel
    */
   private parseTunnel(data: Record<string, unknown>): AgentTunnel {
+    // Accept both tunnelId (new API shape) and id (legacy shape) for backward compatibility
+    const tunnelId = (data.tunnelId ?? data.id) as string;
+    const subdomain = data.subdomain as string;
+    const url = data.url as string;
+    const localPort = data.localPort as number;
+
+    if (!tunnelId || !subdomain || !url || localPort == null || typeof localPort !== "number") {
+      throw new Error(
+        `parseTunnel: missing required fields in API response (tunnelId=${tunnelId}, subdomain=${subdomain}, url=${url}, localPort=${localPort})`
+      );
+    }
+
+    if (!data.expiresAt) {
+      throw new Error("parseTunnel: missing expiresAt in API response");
+    }
+
     return {
-      tunnelId: data.tunnelId as string || data.id as string,
-      subdomain: data.subdomain as string,
-      url: data.url as string,
-      localPort: data.localPort as number,
-      createdAt: new Date(data.createdAt as string),
-      expiresAt: new Date(data.expiresAt as string),
+      tunnelId,
+      subdomain,
+      url,
+      localPort,
+      createdAt: data.createdAt ? new Date(data.createdAt as string | number) : new Date(),
+      expiresAt: new Date(data.expiresAt as string | number),
     };
   }
 
