@@ -215,7 +215,7 @@ export class LivePortAgent {
               localPort: port,
               // Use server-provided createdAt if the server sends it; fall back to client time
               // (ConnectedPayload doesn't include createdAt today, but may in a future server version)
-              createdAt: payload.createdAt ? new Date(payload.createdAt as string) : new Date(),
+              createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : new Date(),
               expiresAt: new Date(payload.expiresAt),
             };
             resolve(tunnel);
@@ -548,13 +548,17 @@ export class LivePortAgent {
       );
     }
 
+    if (!data.expiresAt) {
+      throw new Error("parseTunnel: missing expiresAt in API response");
+    }
+
     return {
       tunnelId,
       subdomain,
       url,
       localPort,
-      createdAt: new Date(data.createdAt as string),
-      expiresAt: new Date(data.expiresAt as string),
+      createdAt: data.createdAt ? new Date(data.createdAt as string | number) : new Date(),
+      expiresAt: new Date(data.expiresAt as string | number),
     };
   }
 

@@ -82,7 +82,7 @@ await agent.disconnect();
 
 #### waitForReady()
 
-Wait for the tunnel's public URL to become reachable. Polls the tunnel URL with HTTP GET requests until a **2xx response** is received, validating the full tunnel path end-to-end. Non-2xx responses from the local server (e.g. 404, 500) are treated as "not ready" and polling continues. To avoid this, use `healthPath` to point to an endpoint that returns 2xx when the server is ready.
+Wait for the tunnel's public URL to become reachable. Polls the tunnel URL with HTTP GET requests until a **2xx response** is received, validating the full tunnel path end-to-end. Any non-2xx response — including 3xx redirects (e.g. a `/` that redirects to login) and 4xx/5xx from the local app — is treated as "not ready" and polling continues. Use `healthPath` to point to an endpoint that returns 2xx when the server is ready.
 
 ```typescript
 async waitForReady(tunnel: AgentTunnel, options?: WaitForReadyOptions): Promise<void>
