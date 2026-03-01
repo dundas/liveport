@@ -1,0 +1,173 @@
+# LivePort
+
+> Secure localhost tunnels for AI agents — expose local servers to the internet with bridge key authentication
+
+## Quick Start
+
+```bash
+# Install CLI
+npm install -g @liveport/cli
+
+# Create tunnel (requires bridge key from https://liveport.dev/keys)
+liveport connect 3000 --key lpk_your_bridge_key_here
+
+# Or use env var
+export LIVEPORT_KEY=lpk_your_bridge_key_here
+liveport connect 3000
+```
+
+## CLI Commands
+
+```
+liveport connect <port>          Create tunnel to expose local port
+  -k, --key <key>                Bridge key for auth (or LIVEPORT_KEY env)
+  -s, --server <url>             Tunnel server URL (default: https://tunnel.liveport.online)
+  -r, --region <region>          Server region
+
+liveport status                  Show current tunnel status
+liveport disconnect              Disconnect active tunnel
+  -a, --all                      Disconnect all tunnels
+
+liveport config set <key> <val>  Set config value (key, server)
+liveport config get <key>        Get config value
+liveport config list             List all config values
+liveport config delete <key>     Delete config value
+```
+
+## Agent SDK
+
+```typescript
+import { LivePortAgent } from '@liveport/agent-sdk';
+
+const agent = new LivePortAgent({
+  key: process.env.LIVEPORT_KEY!,
+  apiUrl: 'https://liveport.dev',          // optional
+  tunnelUrl: 'https://tunnel.liveport.online', // optional, for connect()
+  timeout: 30000,                           // optional
+});
+
+// Option A: Agent creates tunnel directly (no CLI needed)
+const tunnel = await agent.connect(3000);
+await agent.waitForReady(tunnel);          // polls until reachable end-to-end
+// Run tests/workflows against tunnel.url
+await agent.disconnect();
+
+// Option B: Wait for developer-created tunnel (CLI creates it)
+const tunnel = await agent.waitForTunnel({ timeout: 30000, pollInterval: 1000 });
+console.log(tunnel.url);  // https://abc123.liveport.online
+
+// List tunnels
+const tunnels = await agent.listTunnels();
+
+// Cleanup
+await agent.disconnect();
+```
+
+## Agent SDK Types
+
+```typescript
+interface LivePortAgentConfig {
+  key: string;         // Bridge key (required)
+  apiUrl?: string;     // API base URL (default: https://liveport.dev)
+  tunnelUrl?: string;  // Tunnel server URL for connect() (default: https://tunnel.liveport.online)
+  timeout?: number;    // Default timeout ms (default: 30000)
+}
+
+interface ConnectOptions {
+  serverUrl?: string;  // Override tunnel server URL
+  timeout?: number;    // Connection timeout ms
+}
+
+interface WaitForReadyOptions {
+  timeout?: number;       // Timeout ms (default: 30000)
+  pollInterval?: number;  // Poll interval ms (default: 1000)
+  healthPath?: string;    // Health check path (default: "/")
+}
+
+interface AgentTunnel {
+  tunnelId: string;
+  subdomain: string;
+  url: string;
+  localPort: number;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+class TunnelTimeoutError extends Error { }
+class ApiError extends Error {
+  statusCode: number;
+  code: string;
+}
+class ConnectionError extends Error { }
+```
+
+## Bridge Keys
+
+- Format: `lpk_<32 chars>` (36 total characters)
+- Auth: Pass via `--key` flag, `LIVEPORT_KEY` env var, or `liveport config set key`
+- Manage at: https://liveport.dev/keys
+
+## WebSocket Protocol (CLI/SDK ↔ Tunnel Server)
+
+Connection: `WSS /connect` with headers `X-Bridge-Key`, `X-Local-Port`
+
+### Message Types
+
+| Type | Direction | Description |
+|------|-----------|-------------|
+| `connected` | Server→Client | Tunnel established (tunnelId, subdomain, url, expiresAt) |
+| `error` | Server→Client | Error (code, message, fatal, retryAfter?) |
+| `heartbeat` | Client→Server | Keep-alive (requestCount) |
+| `heartbeat_ack` | Server→Client | Heartbeat response |
+| `http_request` | Server→Client | Forward HTTP request (method, path, headers, body base64) |
+| `http_response` | Client→Server | Return HTTP response (status, headers, body base64) |
+| `websocket_upgrade` | Server→Client | WebSocket upgrade request (path, headers, subprotocol) |
+| `websocket_upgrade_response` | Client→Server | Accept/reject upgrade |
+| `websocket_data` | Bidirectional | WebSocket message relay (data base64, binary flag) |
+| `websocket_close` | Bidirectional | Close WebSocket (code, reason, initiator) |
+| `disconnect` | Bidirectional | Graceful disconnect |
+
+## Tunnel Server HTTP Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Server health check (connections, uptime, metering) |
+| GET | `/_internal/tunnels` | List active tunnels (dev only) |
+| GET | `/_internal/metering/health` | Metering service health |
+| GET | `/api/tunnels/by-key/:keyId` | Get tunnels for a key (internal, requires X-Api-Secret) |
+| POST | `/api/proxy/token` | Mint proxy token (internal, requires X-Api-Secret) |
+| GET | `/api/tls-check?domain=` | On-demand TLS cert validation |
+| ALL | `*` | Catch-all: proxies to tunnel by subdomain |
+
+## Limits
+
+- Free tier: 1 concurrent tunnel
+- Paid tiers: Up to 5 concurrent tunnels per key
+- Max request body: 10MB
+- Max WebSocket frame: 10MB
+- Request timeout: 30s
+- Heartbeat: 10s interval, 30s timeout
+
+## Shared Types
+
+```typescript
+// Bridge key format
+type BridgeKey = {
+  id: string; userId: string; name: string;
+  keyHash: string; keyPrefix: string;
+  status: 'active' | 'revoked' | 'expired';
+  expiresAt?: Date; maxUses?: number; currentUses: number;
+  allowedPort?: number;
+}
+
+// Tunnel
+type Tunnel = {
+  id: string; userId: string; bridgeKeyId?: string;
+  subdomain: string; name?: string; localPort: number;
+  publicUrl: string; region: string;
+  requestCount: number; bytesTransferred: number;
+}
+
+// User tiers
+type UserTier = 'free' | 'pro' | 'team' | 'enterprise';
+```
