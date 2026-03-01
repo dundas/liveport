@@ -191,5 +191,5 @@ All HTTP methods, headers, and body content are transparently proxied. WebSocket
 - **Max WebSocket frame**: 10MB
 - **Max concurrent WebSocket connections**: limited per tunnel (returns 503 if exceeded)
 - **Request timeout**: 30 seconds
-- **Heartbeat timeout**: 30 seconds (CLI must stay connected)
+- **Heartbeat timeout**: 30 seconds (CLI sends heartbeat every 10s; SDK responds to server heartbeats)
 - **Reconnection**: CLI auto-reconnects up to 5 times with exponential backoff

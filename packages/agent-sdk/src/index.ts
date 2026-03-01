@@ -534,6 +534,7 @@ export class LivePortAgent {
    */
   private parseTunnel(data: Record<string, unknown>): AgentTunnel {
     return {
+      // Accept both tunnelId (new API shape) and id (legacy shape) for backward compatibility
       tunnelId: data.tunnelId as string || data.id as string,
       subdomain: data.subdomain as string,
       url: data.url as string,

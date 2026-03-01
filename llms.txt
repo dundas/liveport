@@ -122,8 +122,8 @@ Connection: `WSS /connect` with headers `X-Bridge-Key`, `X-Local-Port`
 |------|-----------|-------------|
 | `connected` | Server→Client | Tunnel established (tunnelId, subdomain, url, expiresAt) |
 | `error` | Server→Client | Error (code, message, fatal, retryAfter?) |
-| `heartbeat` | Server→CLI, Server→Agent | Server sends heartbeat to both CLI clients and SDK agents |
-| `heartbeat_ack` | CLI→Server, Agent→Server | Heartbeat acknowledgment from client |
+| `heartbeat` | CLI→Server (CLI mode); Server→Agent (SDK mode) | CLI sends heartbeat every 10s; server sends heartbeat to SDK agents |
+| `heartbeat_ack` | Server→CLI (CLI mode); Agent→Server (SDK mode) | Heartbeat acknowledgment response |
 | `http_request` | Server→Client | Forward HTTP request (method, path, headers, body base64) |
 | `http_response` | Client→Server | Return HTTP response (status, headers, body base64) |
 | `websocket_upgrade` | Server→Client | WebSocket upgrade request (path, headers, subprotocol) |
