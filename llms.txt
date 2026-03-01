@@ -84,9 +84,11 @@ interface WaitForTunnelOptions {
 }
 
 interface WaitForReadyOptions {
-  timeout?: number;       // Timeout ms (default: 30000)
+  timeout?: number;       // Timeout ms (default: config.timeout, typically 30000)
   pollInterval?: number;  // Poll interval ms (default: 1000)
   healthPath?: string;    // Health check path (default: "/")
+  // Note: any non-2xx response (including 3xx redirects) continues polling.
+  // Use healthPath to point to an endpoint that returns 2xx when ready.
 }
 
 interface AgentTunnel {

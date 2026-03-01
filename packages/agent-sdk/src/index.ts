@@ -542,7 +542,7 @@ export class LivePortAgent {
     const url = data.url as string;
     const localPort = data.localPort as number;
 
-    if (!tunnelId || !subdomain || !url || !localPort) {
+    if (!tunnelId || !subdomain || !url || localPort == null || typeof localPort !== "number") {
       throw new Error(
         `parseTunnel: missing required fields in API response (tunnelId=${tunnelId}, subdomain=${subdomain}, url=${url}, localPort=${localPort})`
       );
