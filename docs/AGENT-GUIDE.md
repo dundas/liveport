@@ -186,8 +186,10 @@ All HTTP methods, headers, and body content are transparently proxied. WebSocket
 ## Limitations
 
 - **Free tier**: 1 concurrent tunnel per bridge key
+- **Paid tiers**: Up to 5 concurrent tunnels per key
 - **Max request body**: 10MB
 - **Max WebSocket frame**: 10MB
+- **Max concurrent WebSocket connections**: limited per tunnel (returns 503 if exceeded)
 - **Request timeout**: 30 seconds
 - **Heartbeat timeout**: 30 seconds (CLI must stay connected)
 - **Reconnection**: CLI auto-reconnects up to 5 times with exponential backoff

@@ -146,7 +146,7 @@ liveport config delete <key>
 
 | Variable | Description |
 |----------|-------------|
-| `LIVEPORT_KEY` | Default bridge key (overridden by `--key` flag) |
+| `LIVEPORT_KEY` | Default bridge key (overridden by `--key` flag); also accepted as `LIVEPORT_BRIDGE_KEY` |
 | `LIVEPORT_SERVER_URL` | Default tunnel server URL (overridden by `--server` flag) |
 | `DEBUG` | Enable debug logging (any truthy value) |
 

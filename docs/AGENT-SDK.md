@@ -64,7 +64,7 @@ async connect(port: number, options?: ConnectOptions): Promise<AgentTunnel>
 **Example:**
 
 ```typescript
-const agent = new LivePortAgent({ key: process.env.LIVEPORT_KEY! });
+const agent = new LivePortAgent({ key: process.env.LIVEPORT_BRIDGE_KEY! });
 
 // Connect to local server on port 3000
 const tunnel = await agent.connect(3000);
@@ -137,7 +137,7 @@ async waitForTunnel(options?: WaitForTunnelOptions): Promise<AgentTunnel>
 **Example:**
 
 ```typescript
-const agent = new LivePortAgent({ key: 'lpk_...' });
+const agent = new LivePortAgent({ key: process.env.LIVEPORT_BRIDGE_KEY! });
 
 try {
   const tunnel = await agent.waitForTunnel({ timeout: 60000 });
@@ -311,7 +311,7 @@ import { LivePortAgent, TunnelTimeoutError, ConnectionError } from '@liveport/ag
 
 async function runAgentTests() {
   const agent = new LivePortAgent({
-    key: process.env.LIVEPORT_KEY!,
+    key: process.env.LIVEPORT_BRIDGE_KEY!,
     timeout: 60000,
   });
 

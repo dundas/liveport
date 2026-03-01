@@ -74,8 +74,13 @@ interface LivePortAgentConfig {
 }
 
 interface ConnectOptions {
-  serverUrl?: string;  // Override tunnel server URL
+  serverUrl?: string;  // Override tunnel server URL (same server as config.tunnelUrl)
   timeout?: number;    // Connection timeout ms
+}
+
+interface WaitForTunnelOptions {
+  timeout?: number;       // Timeout ms (default: 30000)
+  pollInterval?: number;  // Poll interval ms (default: 1000)
 }
 
 interface WaitForReadyOptions {
@@ -117,8 +122,8 @@ Connection: `WSS /connect` with headers `X-Bridge-Key`, `X-Local-Port`
 |------|-----------|-------------|
 | `connected` | Server→Client | Tunnel established (tunnelId, subdomain, url, expiresAt) |
 | `error` | Server→Client | Error (code, message, fatal, retryAfter?) |
-| `heartbeat` | Server→Client (CLI) / Server→SDK | Server sends heartbeat; CLI also sends one every 10s with requestCount |
-| `heartbeat_ack` | Client→Server | Heartbeat acknowledgment response |
+| `heartbeat` | Server→CLI, Server→Agent | Server sends heartbeat to both CLI clients and SDK agents |
+| `heartbeat_ack` | CLI→Server, Agent→Server | Heartbeat acknowledgment from client |
 | `http_request` | Server→Client | Forward HTTP request (method, path, headers, body base64) |
 | `http_response` | Client→Server | Return HTTP response (status, headers, body base64) |
 | `websocket_upgrade` | Server→Client | WebSocket upgrade request (path, headers, subprotocol) |
