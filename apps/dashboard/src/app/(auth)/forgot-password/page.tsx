@@ -19,28 +19,35 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
     setIsLoading(true);
 
     try {
-      // Always show success to prevent email enumeration attacks
-      // The API will only send an email if the account exists
-      await fetch("/api/auth/request-reset", {
+      const response = await fetch("/api/auth/request-reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-        }),
+        body: JSON.stringify({ email }),
       });
 
-      // Always show success regardless of whether email exists
+      if (response.status === 429) {
+        setError("Too many reset attempts. Please wait a few minutes and try again.");
+        return;
+      }
+
+      if (!response.ok) {
+        setError("Unable to process your request right now. Please try again.");
+        return;
+      }
+
+      // Show success regardless of whether email exists (prevent enumeration)
       setIsSubmitted(true);
     } catch (err) {
       console.error("Password reset request error:", err);
-      // Still show success to prevent enumeration
-      setIsSubmitted(true);
+      setError("Unable to process your request right now. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -109,6 +116,8 @@ export default function ForgotPasswordPage() {
               disabled={isLoading}
             />
           </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
