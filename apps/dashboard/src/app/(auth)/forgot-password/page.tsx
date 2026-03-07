@@ -27,12 +27,11 @@ export default function ForgotPasswordPage() {
     try {
       // Always show success to prevent email enumeration attacks
       // The API will only send an email if the account exists
-      await fetch("/api/auth/forget-password", {
+      await fetch("/api/auth/request-reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
-          redirectTo: "/reset-password",
         }),
       });
 

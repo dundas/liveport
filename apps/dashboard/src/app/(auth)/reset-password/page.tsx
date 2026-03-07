@@ -59,7 +59,7 @@ function ResetPasswordForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          newPassword: password,
+          password,
           token: token!,
         }),
       });
