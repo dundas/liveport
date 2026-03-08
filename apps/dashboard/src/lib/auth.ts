@@ -41,7 +41,8 @@ function createAuth() {
     database: {
       appId: process.env.MECH_APPS_APP_ID,
       apiKey: process.env.MECH_APPS_API_KEY,
-      baseUrl: process.env.MECH_APPS_URL,
+      // ClearAuth's MechSqlClient adds /api internally, so strip it if present
+      baseUrl: process.env.MECH_APPS_URL?.replace(/\/api$/, ""),
     },
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
