@@ -36,5 +36,17 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  return handleClearAuthRequest(req, auth);
+  const response = await handleClearAuthRequest(req, auth);
+
+  // ClearAuth hardcodes post-OAuth redirect to "/". Rewrite to "/dashboard".
+  if (response.status === 302) {
+    const location = response.headers.get("Location");
+    if (location === "/") {
+      const headers = new Headers(response.headers);
+      headers.set("Location", "/dashboard");
+      return new Response(null, { status: 302, headers });
+    }
+  }
+
+  return response;
 }
