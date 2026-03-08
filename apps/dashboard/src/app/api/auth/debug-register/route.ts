@@ -14,7 +14,6 @@ export async function POST(req: NextRequest) {
       hasMechAppId: !!process.env.MECH_APPS_APP_ID,
       hasMechApiKey: !!process.env.MECH_APPS_API_KEY,
       hasMechUrl: !!process.env.MECH_APPS_URL,
-      mechUrl: process.env.MECH_APPS_URL ? process.env.MECH_APPS_URL.replace(/apiKey=.*/, "apiKey=***") : "not set",
     },
   };
 
@@ -29,22 +28,14 @@ export async function POST(req: NextRequest) {
       diagnostics.dbAccessible = !!db;
       diagnostics.dbType = typeof db;
 
-      // Try a simple query to check DB connectivity
-      const testResult = await db.query("SELECT 1 as test");
+      // Try a simple Kysely query
+      const testResult = await db.selectFrom("users" as never).select("id" as never).limit(1).execute();
       diagnostics.dbQueryWorks = true;
-      diagnostics.dbQueryResult = testResult;
+      diagnostics.dbQueryResultCount = (testResult as unknown[]).length;
     } catch (dbErr: unknown) {
       diagnostics.dbAccessible = false;
       diagnostics.dbError = dbErr instanceof Error ? dbErr.message : String(dbErr);
       diagnostics.dbErrorStack = dbErr instanceof Error ? dbErr.stack?.split("\n").slice(0, 5) : undefined;
-    }
-
-    // Try listing tables
-    try {
-      const tables = await auth.database.listTables();
-      diagnostics.tables = tables;
-    } catch (tableErr: unknown) {
-      diagnostics.tablesError = tableErr instanceof Error ? tableErr.message : String(tableErr);
     }
 
     // Try the actual register
