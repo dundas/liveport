@@ -12,7 +12,7 @@ function createAuth() {
     throw new Error("MECH_APPS_APP_ID and MECH_APPS_API_KEY are required for database connection");
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || "http://localhost:3001";
+  const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || "http://localhost:3001").trim();
 
   const oauthProviders: {
     github?: { clientId: string; clientSecret: string; redirectUri: string };
