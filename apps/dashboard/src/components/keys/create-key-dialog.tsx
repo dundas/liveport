@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import posthog from "posthog-js";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +56,11 @@ export function CreateKeyDialog({ onKeyCreated }: CreateKeyDialogProps) {
       const data = await response.json();
       setCreatedKey(data.key);
       setStep("success");
+      posthog.capture("bridge_key_created", {
+        expires_in: expiresIn,
+        has_max_uses: !!maxUses,
+        has_port_restriction: !!allowedPort,
+      });
       // Note: onKeyCreated will be called when user clicks "Done" to avoid
       // re-render closing the modal before user can copy the key
     } catch (err) {

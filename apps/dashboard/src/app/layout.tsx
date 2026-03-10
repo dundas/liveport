@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProviderWrapper } from "@/components/providers/auth-provider-wrapper";
+import { PostHogProviderWrapper } from "@/components/providers/posthog-provider";
 
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
@@ -23,9 +24,11 @@ export default function RootLayout({
       <body
         className={`${jetbrainsMono.variable} font-mono antialiased`}
       >
-        <AuthProviderWrapper>
-          {children}
-        </AuthProviderWrapper>
+        <PostHogProviderWrapper>
+          <AuthProviderWrapper>
+            {children}
+          </AuthProviderWrapper>
+        </PostHogProviderWrapper>
       </body>
     </html>
   );
