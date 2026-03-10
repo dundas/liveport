@@ -28,7 +28,7 @@ export function PostHogProviderWrapper({
     if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
     if (initialized) return;
     initialized = true;
-    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
+    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY.trim(), {
       api_host: "https://us.i.posthog.com",
       capture_pageview: false,
       capture_pageleave: true,
