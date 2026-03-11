@@ -1,0 +1,58 @@
+{
+  "name": "@liveport/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for LivePort — expose localhost ports to AI agents with one tool call",
+  "bin": {
+    "liveport-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "pnpm build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "tunnel",
+    "localhost",
+    "liveport",
+    "ai-agents",
+    "claude",
+    "anthropic"
+  ],
+  "author": "LivePort",
+  "license": "MIT",
+  "homepage": "https://liveport.dev",
+  "bugs": {
+    "url": "https://github.com/dundas/liveport/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dundas/liveport.git",
+    "directory": "packages/mcp"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@liveport/agent-sdk": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0"
+  }
+}
