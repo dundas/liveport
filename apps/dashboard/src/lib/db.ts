@@ -17,7 +17,7 @@ export function getDbClient(): MechStorageClient {
     dbClient = new MechStorageClient({
       appId: process.env.MECH_APPS_APP_ID!,
       apiKey: process.env.MECH_APPS_API_KEY!,
-      baseUrl: process.env.MECH_APPS_URL || "https://mech-apps.fly.dev",
+      baseUrl: (process.env.MECH_APPS_URL || "https://mech-apps.fly.dev").replace(/\/api$/, ""),
     });
   }
   return dbClient;

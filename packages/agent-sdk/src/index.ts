@@ -330,8 +330,8 @@ export class LivePortAgent {
         } else if (response.status === 408) {
           // Timeout from server, continue polling
         } else {
-          const error = await response.json().catch(() => ({ code: "UNKNOWN", message: "Request failed" })) as { code: string; message: string };
-          throw new ApiError(response.status, error.code, error.message);
+          const error = await response.json().catch(() => ({ code: "UNKNOWN", message: "Request failed" })) as { code: string; message?: string; error?: string };
+          throw new ApiError(response.status, error.code, error.message ?? error.error ?? "Request failed");
         }
       } catch (err) {
         if (err instanceof ApiError) throw err;
@@ -358,8 +358,8 @@ export class LivePortAgent {
     const response = await this.makeRequest("/api/agent/tunnels");
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ code: "UNKNOWN", message: "Request failed" })) as { code: string; message: string };
-      throw new ApiError(response.status, error.code, error.message);
+      const error = await response.json().catch(() => ({ code: "UNKNOWN", message: "Request failed" })) as { code: string; message?: string; error?: string };
+      throw new ApiError(response.status, error.code, error.message ?? error.error ?? "Request failed");
     }
 
     const data = await response.json() as { tunnels?: Record<string, unknown>[] };
