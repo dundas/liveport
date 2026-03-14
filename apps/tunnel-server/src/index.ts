@@ -75,7 +75,7 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
     const db = getDatabase({
       appId: process.env.MECH_APPS_APP_ID!,
       apiKey: process.env.MECH_APPS_API_KEY!,
-      baseUrl: process.env.MECH_APPS_URL || "https://storage.mechdna.net/api",
+      baseUrl: (process.env.MECH_APPS_URL || "https://storage.mechdna.net").replace(/\/api$/, ""),
     });
     const schemaResult = await initializeSchema(db);
     console.log("Schema initialization complete:", schemaResult);
