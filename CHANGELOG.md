@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `@liveport/mcp` MCP server with 5 tools: `liveport_connect`, `liveport_list_tunnels`, `liveport_get_tunnel_url`, `liveport_disconnect`, `liveport_status` (PR #31, 2026-03-14)
+- PostHog analytics to LivePort dashboard with `$pageview` and `$identify` events (PR #30, 2026-03-14)
+
+### Fixed
+- Normalize `MECH_APPS_URL` `/api` suffix in `MechStorageClient` constructor — fixes production 500 errors on all bridge key and tunnel API routes caused by double `/api` prefix (PR #32, 2026-03-14)
+- Fix error field parsing in agent-sdk — API returns `{error, code}` but SDK read `error.message` (undefined); now uses `error.message ?? error.error ?? "Request failed"` (PR #32, 2026-03-14)
+- Fix stale default URL in dashboard db.ts (`mech-apps.fly.dev` → `storage.mechdna.net`) (PR #32, 2026-03-14)
+- Trim `NEXT_PUBLIC_POSTHOG_KEY` to remove trailing newline added by Vercel env CLI (PR #30, 2026-03-14)
+
+### Changed
+- `/api` suffix stripping moved into `MechStorageClient` constructor — all consumers safe by default (PR #32, 2026-03-14)
+- Update `.env.example` Redis URL to `rediss://` (TLS) for Upstash compatibility (PR #32, 2026-03-14)
+- Set Node.js 22.x for Vercel build (PR #29, 2026-03-14)
+
 ### Changed - WebSocket Raw Byte Piping Refactor (PRD-005)
 
 #### Overview
