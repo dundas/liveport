@@ -41,14 +41,14 @@ LivePort is a pnpm monorepo using Turborepo for build orchestration. It provides
 - **`@liveport/shared`** (`packages/shared/`) - Core utilities shared across all packages
   - `db/` - mech-storage PostgreSQL client and repositories
   - `redis/` - Redis client, rate limiting, tunnel state, caching
-  - `auth/` - Better Auth adapter for mech-storage
+  - `auth/` - ClearAuth adapter for mech-storage
   - `keys/` - Bridge key generation and validation
   - `types/` - Shared TypeScript types
   - Build: `tsup` outputs CJS, ESM, and DTS
 
 - **`@liveport/dashboard`** (`apps/dashboard/`) - Next.js 16 web dashboard
   - Uses App Router with route groups: `(auth)` for login/signup, `(dashboard)` for protected pages
-  - Auth via Better Auth with mech-storage adapter
+  - Auth via ClearAuth (GitHub + Google OAuth) with mech-storage adapter
   - UI components from shadcn/ui in `src/components/ui/`
   - Runs on port 3001
 
@@ -64,24 +64,24 @@ import { MechStorageClient } from "@liveport/shared";
 const db = new MechStorageClient({ appId, apiKey, baseUrl });
 ```
 
-**Auth**: Better Auth with custom mech-storage adapter:
+**Auth**: ClearAuth with mech-storage adapter (`apps/dashboard/src/lib/auth.ts`):
 ```typescript
-import { mechStorageAdapter } from "@liveport/shared/auth";
-betterAuth({ database: mechStorageAdapter(db) });
+import { createClearAuthNode } from "clearauth/node";
+createClearAuthNode({ secret, baseUrl, database: { appId, apiKey, baseUrl } });
 ```
 
 **Redis**: Fly.io Upstash Redis (`liveport-redis`). Client at `@liveport/shared/redis`.
 
 ### Database Schema
 
-Tables follow Better Auth conventions (`user`, `session`, `account`, `verification`) plus LivePort tables (`bridge_keys`, `tunnels`). Schema defined in `packages/shared/src/db/schema.ts`.
+Tables: `user`, `session`, `account`, `verification` (ClearAuth conventions) plus LivePort tables (`bridge_keys`, `tunnels`). Schema defined in `packages/shared/src/db/schema.ts`.
 
 ## Environment Variables
 
 Copy `apps/dashboard/.env.example` to `.env`. Required:
 - `MECH_APPS_APP_ID`, `MECH_APPS_API_KEY` - Database credentials
-- `REDIS_URL` - Redis connection string
-- `BETTER_AUTH_SECRET` - Auth secret (32+ chars)
+- `REDIS_URL` - Redis connection string (use `rediss://` for TLS with Upstash)
+- `AUTH_SECRET` - ClearAuth secret (32+ chars)
 
 ## Task Documentation
 

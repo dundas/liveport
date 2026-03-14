@@ -44,10 +44,17 @@ export class MechStorageClient {
   private config: Required<DatabaseConfig>;
 
   constructor(config: DatabaseConfig) {
+    const rawBaseUrl = config.baseUrl || "https://storage.mechdna.net";
+    if (rawBaseUrl.endsWith("/api")) {
+      console.warn(
+        "[MechStorageClient] MECH_APPS_URL should not include /api suffix — stripping automatically. " +
+        "Update your env var to remove the trailing /api."
+      );
+    }
     this.config = {
       apiKey: config.apiKey,
       appId: config.appId,
-      baseUrl: config.baseUrl || "https://storage.mechdna.net",
+      baseUrl: rawBaseUrl.replace(/\/api$/, ""),
     };
   }
 
