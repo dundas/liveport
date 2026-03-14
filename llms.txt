@@ -2,175 +2,217 @@
 
 > Secure localhost tunnels for AI agents — expose local servers to the internet with bridge key authentication
 
+Base URL: https://liveport.dev
+Tunnel domain: https://<subdomain>.liveport.online
+
 ## Quick Start
 
 ```bash
 # Install CLI
 npm install -g @liveport/cli
 
-# Create tunnel (requires bridge key from https://liveport.dev/keys)
-liveport connect 3000 --key lpk_your_bridge_key_here
+# Get a bridge key from https://liveport.dev
+
+# Expose local port 3000
+liveport connect 3000 --key lpk_yourkey
 
 # Or use env var
-export LIVEPORT_KEY=lpk_your_bridge_key_here
+export LIVEPORT_KEY=lpk_yourkey
 liveport connect 3000
 ```
 
-## CLI Commands
+```typescript
+// Agent SDK
+import { LivePortAgent } from "@liveport/agent-sdk";
+
+const agent = new LivePortAgent({ key: process.env.LIVEPORT_BRIDGE_KEY! });
+const tunnel = await agent.connect(3000);
+await agent.waitForReady(tunnel);
+console.log(tunnel.url); // https://abc123.liveport.online
+await agent.disconnect();
+```
+
+## Authentication
+
+All requests use bridge keys. Format: `lpk_<32 random chars>` (36 chars total).
+Display prefix: first 12 chars (e.g. `lpk_xxxxxxxx`).
+
+HTTP header: `Authorization: Bearer <bridge-key>`
+WebSocket headers: `X-Bridge-Key: <bridge-key>`, `X-Local-Port: <port>`
+
+Obtain bridge keys at: https://liveport.dev/keys
+
+## CLI
+
+Binary: `liveport`
 
 ```
-liveport connect <port>          Create tunnel to expose local port
-  -k, --key <key>                Bridge key for auth (or LIVEPORT_KEY env)
-  -s, --server <url>             Tunnel server URL (default: https://tunnel.liveport.online)
-  -r, --region <region>          Server region
-
-liveport status                  Show current tunnel status
-liveport disconnect              Disconnect active tunnel
-  -a, --all                      Disconnect all tunnels
-
-liveport config set <key> <val>  Set config value (key, server)
-liveport config get <key>        Get config value
-liveport config list             List all config values
-liveport config delete <key>     Delete config value
+liveport connect <port> [-k <key>] [-s <url>] [-r <region>]
+liveport status
+liveport disconnect [-a]
+liveport config set <key> <value>
+liveport config get <key>
+liveport config list
+liveport config delete <key>
 ```
+
+Config keys: `key`, `server`
+Config stored at: `~/.liveport/config.json`
+Auth priority: `--key` flag → `LIVEPORT_KEY` env var → config file
 
 ## Agent SDK
 
+Package: `@liveport/agent-sdk`
+
+### Constructor
 ```typescript
-import { LivePortAgent } from '@liveport/agent-sdk';
-
-const agent = new LivePortAgent({
-  key: process.env.LIVEPORT_BRIDGE_KEY!,
-  apiUrl: 'https://liveport.dev',          // optional
-  tunnelUrl: 'https://tunnel.liveport.online', // optional, for connect()
-  timeout: 30000,                           // optional
-});
-
-// Option A: Agent creates tunnel directly (no CLI needed)
-const tunnelA = await agent.connect(3000);
-await agent.waitForReady(tunnelA);         // polls until reachable end-to-end
-// Run tests/workflows against tunnelA.url
-await agent.disconnect();
-
-// Option B: Wait for developer-created tunnel (CLI creates it)
-const tunnelB = await agent.waitForTunnel({ timeout: 30000, pollInterval: 1000 });
-console.log(tunnelB.url);  // https://abc123.liveport.online
-
-// List tunnels
-const tunnels = await agent.listTunnels();
-
-// Cleanup
-await agent.disconnect();
+new LivePortAgent({
+  key: string,           // required: bridge key
+  apiUrl?: string,       // default: https://liveport.dev
+  tunnelUrl?: string,    // default: https://tunnel.liveport.online
+  timeout?: number,      // default: 30000 ms
+})
 ```
 
-## Agent SDK Types
-
+### Methods
 ```typescript
-interface LivePortAgentConfig {
-  key: string;         // Bridge key (required)
-  apiUrl?: string;     // API base URL (default: https://liveport.dev)
-  tunnelUrl?: string;  // Tunnel server URL for connect() (default: https://tunnel.liveport.online)
-  timeout?: number;    // Default timeout ms (default: 30000)
-}
+agent.connect(port, options?)        // Create WebSocket tunnel → AgentTunnel
+agent.waitForReady(tunnel, options?) // Poll until public URL returns 2xx → void
+agent.waitForTunnel(options?)        // Long-poll API until tunnel ready → AgentTunnel
+agent.listTunnels()                  // List active tunnels → AgentTunnel[]
+agent.disconnect()                   // Cancel pending calls, close WS → void
+```
 
-interface ConnectOptions {
-  serverUrl?: string;  // Override tunnel server URL (same server as config.tunnelUrl)
-  timeout?: number;    // Connection timeout ms
-}
-
-interface WaitForTunnelOptions {
-  timeout?: number;       // Timeout ms (default: 30000)
-  pollInterval?: number;  // Poll interval ms (default: 1000)
-}
-
-interface WaitForReadyOptions {
-  timeout?: number;       // Timeout ms (default: config.timeout, typically 30000)
-  pollInterval?: number;  // Poll interval ms (default: 1000)
-  healthPath?: string;    // Health check path (default: "/")
-  // Note: any non-2xx response (including 3xx redirects) continues polling.
-  // Use healthPath to point to an endpoint that returns 2xx when ready.
-}
-
+### AgentTunnel
+```typescript
 interface AgentTunnel {
-  tunnelId: string;
-  subdomain: string;
-  url: string;
+  tunnelId: string;    // Unique tunnel identifier
+  subdomain: string;   // Assigned subdomain (e.g. "abc123")
+  url: string;         // https://<subdomain>.liveport.online
   localPort: number;
   createdAt: Date;
   expiresAt: Date;
 }
-
-class TunnelTimeoutError extends Error { }
-class ApiError extends Error {
-  statusCode: number;
-  code: string;
-}
-class ConnectionError extends Error { }
 ```
 
-## Bridge Keys
+### ConnectOptions
+```typescript
+{ serverUrl?: string, timeout?: number }
+```
 
-- Format: `lpk_<32 chars>` (36 total characters)
-- Auth: Pass via `--key` flag, `LIVEPORT_KEY` env var, or `liveport config set key`
-- Manage at: https://liveport.dev/keys
+### WaitForReadyOptions
+```typescript
+{ timeout?: number, pollInterval?: number, healthPath?: string }
+```
+Note: any non-2xx response (including 3xx) continues polling. Use `healthPath` to point to an endpoint that returns 2xx when ready.
 
-## WebSocket Protocol (CLI/SDK ↔ Tunnel Server)
+### WaitForTunnelOptions
+```typescript
+{ timeout?: number, pollInterval?: number }
+```
 
-Connection: `WSS /connect` with headers `X-Bridge-Key`, `X-Local-Port`
+## WebSocket Protocol
 
-### Message Types
+Endpoint: `wss://tunnel.liveport.online/connect`
+Headers: `X-Bridge-Key: <key>`, `X-Local-Port: <port>`
 
-| Type | Direction | Description |
-|------|-----------|-------------|
-| `connected` | Server→Client | Tunnel established (tunnelId, subdomain, url, expiresAt) |
-| `error` | Server→Client | Error (code, message, fatal, retryAfter?) |
-| `heartbeat` | CLI→Server (CLI mode); Server→Agent (SDK mode) | CLI sends heartbeat every 10s; server sends heartbeat to SDK agents |
-| `heartbeat_ack` | Server→CLI (CLI mode); Agent→Server (SDK mode) | Heartbeat acknowledgment response |
-| `http_request` | Server→Client | Forward HTTP request (method, path, headers, body base64) |
-| `http_response` | Client→Server | Return HTTP response (status, headers, body base64) |
-| `websocket_upgrade` | Server→Client | WebSocket upgrade request (path, headers, subprotocol) |
-| `websocket_upgrade_response` | Client→Server | Accept/reject upgrade |
-| `websocket_data` | Bidirectional | WebSocket message relay (data base64, binary flag) |
-| `websocket_close` | Bidirectional | Close WebSocket (code, reason, initiator) |
-| `disconnect` | Bidirectional | Graceful disconnect |
+### Server → Client messages
+```json
+{ "type": "connected", "payload": { "tunnelId", "subdomain", "url", "expiresAt" } }
+{ "type": "http_request", "id": "<reqId>", "payload": { "method", "path", "headers", "body" } }
+{ "type": "heartbeat" }
+{ "type": "error", "payload": { "fatal": true|false, "message": "..." } }
+```
 
-## Tunnel Server HTTP Endpoints
+### Client → Server messages
+```json
+{ "type": "http_response", "id": "<reqId>", "payload": { "status", "headers", "body" } }
+{ "type": "heartbeat_ack", "timestamp": "<iso>" }
+{ "type": "disconnect" }
+```
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Server health check (connections, uptime) |
-| GET | `/api/tls-check?domain=` | On-demand TLS cert validation |
-| ALL | `*` | Catch-all: proxies to tunnel by subdomain |
+## HTTP API (Tunnel Server)
+
+```
+GET  /health                          Server health check (connections, uptime, metering)
+GET  /api/tunnels/by-key/:keyId       List tunnels by key ID (X-Api-Secret required)
+POST /api/proxy/token                 Mint proxy token (X-Api-Secret required)
+GET  /api/tls-check?domain=           On-demand TLS cert validation
+ALL  *                                Catch-all: proxy to tunnel by subdomain
+```
+
+## Error Types
+
+| Class | Description | Extra Fields |
+|-------|-------------|--------------|
+| `TunnelTimeoutError` | Tunnel not reachable within timeout | — |
+| `ApiError` | API request failed | `.statusCode`, `.code` |
+| `ConnectionError` | WebSocket connection failed | — |
+
+## Shared Data Types
+
+```typescript
+type BridgeKey = {
+  id: UUID; userId: UUID; name: string;
+  keyHash: string; keyPrefix: string;
+  expiresAt?: Date; maxUses?: number; currentUses: number;
+  allowedPort?: number;
+  status: "active" | "revoked" | "expired";
+  lastUsedAt?: Date; createdAt: Date; updatedAt: Date;
+}
+
+type Tunnel = {
+  id: UUID; userId: UUID; bridgeKeyId?: UUID;
+  subdomain: string; name?: string; localPort: number;
+  publicUrl: string; region: string;
+  connectedAt: Date; disconnectedAt?: Date;
+  requestCount: number; bytesTransferred: number;
+}
+
+type User = {
+  id: UUID; email: string; name?: string;
+  tier: "free" | "pro" | "team" | "enterprise";
+  createdAt: Date; updatedAt: Date;
+}
+```
 
 ## Limits
 
-- Free tier: 1 concurrent tunnel
+- Free tier: 1 concurrent tunnel per bridge key
 - Paid tiers: Up to 5 concurrent tunnels per key
 - Max request body: 10MB
 - Max WebSocket frame: 10MB
 - Request timeout: 30s
 - Heartbeat: 10s interval, 30s timeout
+- Auto-reconnect (CLI): 5 attempts with exponential backoff
 
-## Shared Types
+## Environment Variables (Tunnel Server)
 
-```typescript
-// Bridge key format
-type BridgeKey = {
-  id: string; userId: string; name: string;
-  keyHash: string; keyPrefix: string;
-  status: 'active' | 'revoked' | 'expired';
-  expiresAt?: Date; maxUses?: number; currentUses: number;
-  allowedPort?: number;
-}
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| PORT | No | 8080 | Server port |
+| BASE_DOMAIN | No | liveport.online | Base domain for tunnels |
+| MECH_APPS_APP_ID | Yes | — | mech-storage app ID |
+| MECH_APPS_API_KEY | Yes | — | mech-storage API key |
+| MECH_APPS_URL | No | https://storage.mechdna.net | mech-storage URL (no /api suffix) |
+| REDIS_URL | No | — | Redis URL for rate limiting |
+| INTERNAL_API_SECRET | No | — | Secret for internal API endpoints |
+| PROXY_GATEWAY_ENABLED | No | false | Enable HTTPS CONNECT proxy |
+| PROXY_TOKEN_SECRET | Cond. | — | Secret for proxy token signing |
+| PROXY_ALLOWED_HOSTS | Cond. | — | Allowed proxy hosts (required if proxy enabled) |
+| PROXY_ALLOWED_DOMAINS | Cond. | — | Allowed proxy domain suffixes |
+| METERING_SYNC_INTERVAL_MS | No | 30000 | Metrics sync interval |
+| METERING_ENABLED | No | true | Enable metering |
 
-// Tunnel
-type Tunnel = {
-  id: string; userId: string; bridgeKeyId?: string;
-  subdomain: string; name?: string; localPort: number;
-  publicUrl: string; region: string;
-  requestCount: number; bytesTransferred: number;
-}
+## Environment Variables (Dashboard)
 
-// User tiers
-type UserTier = 'free' | 'pro' | 'team' | 'enterprise';
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| MECH_APPS_APP_ID | Yes | mech-storage app ID |
+| MECH_APPS_API_KEY | Yes | mech-storage API key |
+| MECH_APPS_URL | No | mech-storage URL (no /api suffix) |
+| REDIS_URL | Yes | Redis connection string |
+| CLEARAUTH_SECRET | Yes | ClearAuth secret (32+ chars) |
+| AUTH_SECRET | Yes | Auth secret (32+ chars) |
+| NEXT_PUBLIC_POSTHOG_KEY | No | PostHog analytics key |
+| NEXT_PUBLIC_POSTHOG_HOST | No | PostHog host |
