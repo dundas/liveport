@@ -19,30 +19,58 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { LivePortAgent, AgentTunnel, ConnectionError, ApiError } from "@liveport/agent-sdk";
+import { LivePortAgent } from "@liveport/agent-sdk";
+import type { AgentTunnel } from "@liveport/agent-sdk";
+import { formatTunnel, getKey, maskKey, extractMessage } from "./helpers.js";
 
 // Active tunnels keyed by localPort
 const activeTunnels = new Map<number, { agent: LivePortAgent; tunnel: AgentTunnel }>();
 
-function getKey(): string {
-  const key = process.env.LIVEPORT_BRIDGE_KEY;
-  if (!key) {
-    throw new Error(
-      "LIVEPORT_BRIDGE_KEY environment variable is required. " +
-      "Get a key at https://liveport.dev/dashboard/keys"
-    );
+// In-flight connect guards — prevents concurrent connects to the same port
+const inFlightConnects = new Map<number, { agent: LivePortAgent; promise: Promise<AgentTunnel> }>();
+
+async function pruneExpiredTunnels(): Promise<void> {
+  const now = new Date();
+  const stalePorts: number[] = [];
+  for (const [port, entry] of activeTunnels.entries()) {
+    if (entry.tunnel.expiresAt <= now) {
+      stalePorts.push(port);
+    }
   }
-  return key;
+  await Promise.allSettled(
+    stalePorts.map(async (port) => {
+      const entry = activeTunnels.get(port);
+      if (!entry) return;
+      await entry.agent.disconnect().catch(() => {});
+      if (activeTunnels.get(port) === entry) {
+        activeTunnels.delete(port);
+      }
+    })
+  );
 }
 
-function formatTunnel(tunnel: AgentTunnel): string {
-  const expiresIn = Math.round((tunnel.expiresAt.getTime() - Date.now()) / 60000);
-  return [
-    `🔗 Port ${tunnel.localPort} → ${tunnel.url}`,
-    `   Tunnel ID: ${tunnel.tunnelId}`,
-    `   Subdomain: ${tunnel.subdomain}`,
-    `   Expires: ${expiresIn > 0 ? `in ${expiresIn} min` : "expired"}`,
-  ].join("\n");
+async function findInFlightByTunnelId(
+  tunnelId: string
+): Promise<{ port: number; entry: { agent: LivePortAgent; promise: Promise<AgentTunnel> } } | null> {
+  // Best-effort: probe in-flight connects briefly so tunnelId-only disconnect
+  // can cancel a connection that just finished assigning an ID.
+  const probes = [...inFlightConnects.entries()].map(async ([port, entry]) => {
+    try {
+      const tunnel = await Promise.race<AgentTunnel | null>([
+        entry.promise,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 25)),
+      ]);
+      if (tunnel && tunnel.tunnelId === tunnelId) {
+        return { port, entry };
+      }
+    } catch {
+      // Ignore failed in-flight connects while searching
+    }
+    return null;
+  });
+
+  const results = await Promise.all(probes);
+  return results.find((match) => match !== null) ?? null;
 }
 
 const server = new McpServer({
@@ -60,6 +88,8 @@ server.tool(
     timeout: z.number().int().min(1000).max(120000).optional().describe("Connection timeout in ms (default: 30000)"),
   },
   async ({ port, timeout }) => {
+    await pruneExpiredTunnels();
+
     // Reuse existing tunnel for this port if still connected
     const existing = activeTunnels.get(port);
     if (existing && existing.tunnel.expiresAt > new Date()) {
@@ -76,13 +106,53 @@ server.tool(
     // Clean up expired entry if present
     if (existing) {
       await existing.agent.disconnect().catch(() => {});
-      activeTunnels.delete(port);
+      if (activeTunnels.get(port) === existing) {
+        activeTunnels.delete(port);
+      }
+    }
+
+    // Deduplicate concurrent connect calls for the same port
+    const inFlight = inFlightConnects.get(port);
+    if (inFlight) {
+      try {
+        const tunnel = await inFlight.promise;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `✅ Tunnel created (shared with concurrent request)\n${formatTunnel(tunnel)}\n\nPublic URL: ${tunnel.url}`,
+            },
+          ],
+        };
+      } catch {
+        // First connect failed — fall through to a fresh attempt
+      }
     }
 
     try {
       const agent = new LivePortAgent({ key: getKey() });
-      const tunnel = await agent.connect(port, { timeout });
-      activeTunnels.set(port, { agent, tunnel });
+      const connectPromise = agent
+        .connect(port, { timeout })
+        .then(async (tunnel) => {
+          if (shutdownInProgress) {
+            await agent.disconnect().catch(() => {});
+            throw new Error("Server shutting down");
+          }
+          activeTunnels.set(port, { agent, tunnel });
+          return tunnel;
+        })
+        .catch(async (err) => {
+          await agent.disconnect().catch(() => {});
+          throw err;
+        })
+        .finally(() => {
+          const current = inFlightConnects.get(port);
+          if (current?.promise === connectPromise) {
+            inFlightConnects.delete(port);
+          }
+        });
+      inFlightConnects.set(port, { agent, promise: connectPromise });
+      const tunnel = await connectPromise;
 
       return {
         content: [
@@ -93,11 +163,8 @@ server.tool(
         ],
       };
     } catch (err) {
-      const message = err instanceof ConnectionError || err instanceof ApiError
-        ? err.message
-        : String(err);
       return {
-        content: [{ type: "text", text: `❌ Failed to create tunnel: ${message}` }],
+        content: [{ type: "text", text: `❌ Failed to create tunnel: ${extractMessage(err)}` }],
         isError: true,
       };
     }
@@ -111,6 +178,7 @@ server.tool(
   "List all active tunnels for the current bridge key, including tunnels created in other sessions.",
   {},
   async () => {
+    await pruneExpiredTunnels();
     try {
       const agent = new LivePortAgent({ key: getKey() });
       const tunnels = await agent.listTunnels();
@@ -131,7 +199,7 @@ server.tool(
         content: [{ type: "text", text: lines.join("\n") }],
       };
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : String(err);
+      const message = extractMessage(err);
       return {
         content: [{ type: "text", text: `❌ Failed to list tunnels: ${message}` }],
         isError: true,
@@ -149,24 +217,41 @@ server.tool(
     port: z.number().int().min(1).max(65535).describe("Local port to look up"),
   },
   async ({ port }) => {
+    await pruneExpiredTunnels();
+
     // Check local session first
     const local = activeTunnels.get(port);
-    if (local && local.tunnel.expiresAt > new Date()) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Tunnel URL for port ${port}: ${local.tunnel.url}`,
-          },
-        ],
-      };
+    if (local) {
+      if (local.tunnel.expiresAt > new Date()) {
+        return {
+          content: [{ type: "text", text: `Tunnel URL for port ${port}: ${local.tunnel.url}` }],
+        };
+      }
+      // Stale entry — clean up before falling back to API
+      await local.agent.disconnect().catch(() => {});
+      if (activeTunnels.get(port) === local) {
+        activeTunnels.delete(port);
+      }
     }
 
     // Fall back to API
     try {
       const agent = new LivePortAgent({ key: getKey() });
       const tunnels = await agent.listTunnels();
-      const match = tunnels.find((t) => t.localPort === port);
+      const matches = tunnels.filter((t) => t.localPort === port);
+
+      if (matches.length > 1) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Multiple active tunnels use port ${port}. Use liveport_list_tunnels to choose the correct tunnel.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const [match] = matches;
 
       if (!match) {
         return {
@@ -183,7 +268,7 @@ server.tool(
         content: [{ type: "text", text: `Tunnel URL for port ${port}: ${match.url}` }],
       };
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : String(err);
+      const message = extractMessage(err);
       return {
         content: [{ type: "text", text: `❌ Failed to get tunnel URL: ${message}` }],
         isError: true,
@@ -196,12 +281,14 @@ server.tool(
 
 server.tool(
   "liveport_disconnect",
-  "Disconnect a tunnel by local port or tunnel ID. Frees resources when done.",
+  "Disconnect a tunnel by local port or tunnel ID. Only disconnects tunnels created in this session. Use liveport_list_tunnels to inspect tunnels from other sessions.",
   {
     port: z.number().int().min(1).max(65535).optional().describe("Local port of the tunnel to disconnect"),
     tunnelId: z.string().optional().describe("Tunnel ID to disconnect (alternative to port)"),
   },
   async ({ port, tunnelId }) => {
+    await pruneExpiredTunnels();
+
     if (!port && !tunnelId) {
       return {
         content: [{ type: "text", text: "Provide either port or tunnelId." }],
@@ -210,27 +297,82 @@ server.tool(
     }
 
     // Find by port in local session
-    if (port) {
+    if (port !== undefined) {
       const entry = activeTunnels.get(port);
       if (entry) {
+        if (tunnelId && entry.tunnel.tunnelId !== tunnelId) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Port ${port} is active, but tunnelId ${tunnelId} does not match (found ${entry.tunnel.tunnelId}).`,
+              },
+            ],
+            isError: true,
+          };
+        }
         await entry.agent.disconnect().catch(() => {});
-        activeTunnels.delete(port);
+        if (activeTunnels.get(port) === entry) {
+          activeTunnels.delete(port);
+        }
         return {
           content: [{ type: "text", text: `✅ Disconnected tunnel for port ${port}.` }],
+        };
+      }
+
+      const inFlight = inFlightConnects.get(port);
+      if (inFlight) {
+        await inFlight.agent.disconnect().catch(() => {});
+        if (inFlightConnects.get(port)?.promise === inFlight.promise) {
+          inFlightConnects.delete(port);
+        }
+        return {
+          content: [{ type: "text", text: `✅ Disconnected pending tunnel connection for port ${port}.` }],
+        };
+      }
+
+      if (tunnelId) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `No active tunnel found for port ${port} and tunnelId ${tunnelId} in this session.`,
+            },
+          ],
+          isError: true,
         };
       }
     }
 
     // Find by tunnelId in local session
-    if (tunnelId) {
+    if (tunnelId && port === undefined) {
       for (const [p, entry] of activeTunnels.entries()) {
         if (entry.tunnel.tunnelId === tunnelId) {
           await entry.agent.disconnect().catch(() => {});
-          activeTunnels.delete(p);
+          if (activeTunnels.get(p) === entry) {
+            activeTunnels.delete(p);
+          }
           return {
             content: [{ type: "text", text: `✅ Disconnected tunnel ${tunnelId} (port ${p}).` }],
           };
         }
+      }
+
+      const inFlightMatch = await findInFlightByTunnelId(tunnelId);
+      if (inFlightMatch) {
+        await inFlightMatch.entry.agent.disconnect().catch(() => {});
+        const current = inFlightConnects.get(inFlightMatch.port);
+        if (current?.promise === inFlightMatch.entry.promise) {
+          inFlightConnects.delete(inFlightMatch.port);
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: `✅ Disconnected pending tunnel ${tunnelId} (port ${inFlightMatch.port}).`,
+            },
+          ],
+        };
       }
     }
 
@@ -238,9 +380,13 @@ server.tool(
       content: [
         {
           type: "text",
-          text: `No active tunnel found for ${port ? `port ${port}` : `ID ${tunnelId}`} in this session.`,
+          text:
+            port && tunnelId
+              ? `No active tunnel found for port ${port} and tunnelId ${tunnelId} in this session.`
+              : `No active tunnel found for ${port ? `port ${port}` : `ID ${tunnelId}`} in this session.`,
         },
       ],
+      isError: true,
     };
   }
 );
@@ -252,11 +398,17 @@ server.tool(
   "Show the status of the LivePort MCP server — active tunnels in this session and bridge key validity.",
   {},
   async () => {
+    await pruneExpiredTunnels();
+
     const lines: string[] = ["LivePort MCP Server Status\n"];
 
     // Key presence (never log the key itself)
-    const key = process.env.LIVEPORT_BRIDGE_KEY;
-    lines.push(`Bridge key: ${key ? `configured (${key.substring(0, 8)}...)` : "❌ NOT SET"}`);
+    try {
+      const key = getKey();
+      lines.push(`Bridge key: configured (${maskKey(key)})`);
+    } catch {
+      lines.push("Bridge key: ❌ NOT SET");
+    }
     lines.push("");
 
     if (activeTunnels.size === 0) {
@@ -277,15 +429,27 @@ server.tool(
 
 // ─── Start server ─────────────────────────────────────────────────────────────
 
+let shutdownInProgress = false;
+
+async function shutdown() {
+  if (shutdownInProgress) return;
+  shutdownInProgress = true;
+
+  const agents = new Set<LivePortAgent>();
+  for (const { agent } of inFlightConnects.values()) {
+    agents.add(agent);
+  }
+  for (const { agent } of activeTunnels.values()) {
+    agents.add(agent);
+  }
+
+  await Promise.allSettled([...agents].map((agent) => agent.disconnect().catch(() => {})));
+  process.exit(0);
+}
+
 async function main() {
-  // Clean up all tunnels on exit
-  process.on("exit", () => {
-    for (const { agent } of activeTunnels.values()) {
-      agent.disconnect().catch(() => {});
-    }
-  });
-  process.on("SIGINT", () => process.exit(0));
-  process.on("SIGTERM", () => process.exit(0));
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

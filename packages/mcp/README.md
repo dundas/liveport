@@ -54,7 +54,7 @@ The LivePort tools will appear automatically.
 
 Create a tunnel from a local port to a public URL.
 
-```
+```text
 liveport_connect(port: number, timeout?: number)
 ```
 
@@ -64,7 +64,7 @@ Returns the public HTTPS URL. Reuses existing tunnel if already active for that 
 
 List all active tunnels for the current bridge key, including tunnels from other sessions.
 
-```
+```text
 liveport_list_tunnels()
 ```
 
@@ -72,15 +72,15 @@ liveport_list_tunnels()
 
 Get the public URL for a tunnel by local port number.
 
-```
+```text
 liveport_get_tunnel_url(port: number)
 ```
 
 ### `liveport_disconnect`
 
-Disconnect a tunnel when done.
+Disconnect a tunnel when done. Only disconnects tunnels created in this session.
 
-```
+```text
 liveport_disconnect(port?: number, tunnelId?: string)
 ```
 
@@ -88,13 +88,13 @@ liveport_disconnect(port?: number, tunnelId?: string)
 
 Show active tunnels in the current session and bridge key status.
 
-```
+```text
 liveport_status()
 ```
 
 ## Example agent workflow
 
-```
+```text
 User: "Start a tunnel to my dev server on port 3000"
 
 Agent uses liveport_connect(3000)
