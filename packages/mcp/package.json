@@ -1,5 +1,6 @@
 {
   "name": "@liveport/mcp",
+  "mcpName": "io.github.dundas/liveport",
   "version": "0.1.0",
   "description": "MCP server for LivePort — expose localhost ports to AI agents with one tool call",
   "bin": {
