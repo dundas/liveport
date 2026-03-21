@@ -22,6 +22,7 @@ const publicPaths = [
   "/terms",
   "/privacy",
   "/status",
+  "/llms.txt",
 ];
 
 export function middleware(request: NextRequest) {
