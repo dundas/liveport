@@ -4,6 +4,8 @@
 
 LivePort enables AI agents to test applications running on your localhost through secure, temporary tunnels with key-based authentication.
 
+[![LivePort MCP server](https://glama.ai/mcp/servers/dundas/liveport/badges/card.svg)](https://glama.ai/mcp/servers/dundas/liveport)
+
 ## Quick Start
 
 ### 1. Get a Bridge Key
