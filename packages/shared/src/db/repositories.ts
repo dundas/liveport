@@ -451,15 +451,42 @@ export class BridgeKeyRepository {
   /**
    * Increment the use count of a bridge key
    */
-  async incrementUseCount(id: string): Promise<BridgeKey | null> {
-    const existing = await this.findById(id);
-    if (!existing) {
+  async incrementUseCount(id: string, maxUses?: number): Promise<BridgeKey | null> {
+    // Use conditional SQL update to prevent TOCTOU race condition.
+    // If maxUses is provided, only increment if current_uses < max_uses.
+    const params: unknown[] = [id, new Date().toISOString()];
+    let condition = "";
+    if (maxUses !== undefined) {
+      params.push(maxUses);
+      condition = `AND current_uses < $${params.length}`;
+    }
+
+    const result = await this.db.query<BridgeKeyRow>(
+      `UPDATE "${TABLE_NAMES.BRIDGE_KEYS}" SET current_uses = current_uses + 1, updated_at = $2 WHERE id = $1 ${condition} RETURNING *`,
+      params
+    );
+
+    if (result.rowCount === 0) {
       return null;
     }
 
-    return this.update(id, {
-      currentUses: existing.currentUses + 1,
-    });
+    return rowToBridgeKey(result.rows[0]);
+  }
+
+  /**
+   * Atomically decrement the use count of a bridge key (floor at 0)
+   */
+  async decrementUseCount(id: string): Promise<BridgeKey | null> {
+    const result = await this.db.query<BridgeKeyRow>(
+      `UPDATE "${TABLE_NAMES.BRIDGE_KEYS}" SET current_uses = GREATEST(0, current_uses - 1), updated_at = $2 WHERE id = $1 RETURNING *`,
+      [id, new Date().toISOString()]
+    );
+
+    if (result.rowCount === 0) {
+      return null;
+    }
+
+    return rowToBridgeKey(result.rows[0]);
   }
 
   /**

@@ -121,7 +121,7 @@ export class KeyValidator {
     // Check if database is initialized
     if (!this.initialized) {
       // Development fallback - only if explicitly allowed
-      if (process.env.ALLOW_DEV_KEYS === "true" && process.env.NODE_ENV !== "production") {
+      if (process.env.ALLOW_DEV_KEYS === "true" && process.env.NODE_ENV === "development") {
         console.warn("[KeyValidator] Development mode: accepting unregistered key (ALLOW_DEV_KEYS=true)");
         return {
           valid: true,
@@ -232,18 +232,6 @@ export class KeyValidator {
       };
     }
 
-    // Check usage limit
-    if (!options.skipMaxUsesCheck) {
-      if (record.maxUses !== undefined && record.currentUses >= record.maxUses) {
-        console.log(`[KeyValidator] Key max uses reached: ${record.keyPrefix}`);
-        return {
-          valid: false,
-          error: "Key has reached maximum uses",
-          errorCode: "RATE_LIMITED",
-        };
-      }
-    }
-
     // Check port restriction
     if (!options.skipPortCheck) {
       if (record.allowedPort !== undefined && record.allowedPort !== requestedPort) {
@@ -256,14 +244,39 @@ export class KeyValidator {
       }
     }
 
-    // Increment usage count and update last used
+    // Check and increment usage atomically
     if (!options.skipUsageUpdate) {
       try {
-        await this.repo.incrementUseCount(record.id);
+        if (!options.skipMaxUsesCheck && record.maxUses !== undefined) {
+          // Atomic check-and-increment: returns null if at limit
+          const updated = await this.repo.incrementUseCount(record.id, record.maxUses);
+          if (!updated) {
+            console.log(`[KeyValidator] Key max uses reached: ${record.keyPrefix}`);
+            return {
+              valid: false,
+              error: "Key has reached maximum uses",
+              errorCode: "RATE_LIMITED",
+            };
+          }
+        } else {
+          await this.repo.incrementUseCount(record.id);
+        }
         await this.repo.updateLastUsed(record.id);
       } catch (e) {
+        // Availability over strict accounting: allow the connection even if
+        // the usage write fails. This prevents a flapping DB from blocking
+        // all tunnel connections. maxUses may be temporarily unenforced.
         console.error("[KeyValidator] Failed to update usage count:", e);
-        // Don't fail validation for this
+      }
+    } else if (!options.skipMaxUsesCheck) {
+      // Read-only check when skipUsageUpdate is true
+      if (record.maxUses !== undefined && record.currentUses >= record.maxUses) {
+        console.log(`[KeyValidator] Key max uses reached: ${record.keyPrefix}`);
+        return {
+          valid: false,
+          error: "Key has reached maximum uses",
+          errorCode: "RATE_LIMITED",
+        };
       }
     }
 
@@ -282,7 +295,7 @@ export class KeyValidator {
       }
     } catch (e) {
       // Database error - log error and fail the connection to prevent incorrect tier assignment
-      console.error(`[KeyValidator] Failed to fetch user tier for ${record.userId}:`, e);
+      console.error("[KeyValidator] Failed to fetch user tier for", record.userId, e);
       return {
         valid: false,
         error: "Failed to verify user tier - please try again",
@@ -311,12 +324,9 @@ export class KeyValidator {
     }
 
     try {
-      const record = await this.repo.findById(keyId);
-      if (record && record.currentUses > 0) {
-        await this.repo.update(keyId, {
-          currentUses: record.currentUses - 1,
-        });
-      }
+      // Atomic decrement with floor at 0 to prevent race conditions
+      // when multiple tunnels disconnect concurrently
+      await this.repo.decrementUseCount(keyId);
     } catch (e) {
       console.error("[KeyValidator] Failed to decrement usage:", e);
     }

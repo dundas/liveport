@@ -299,6 +299,57 @@ export class ConnectionManager {
   }
 
   /**
+   * Find connections with expired keys
+   */
+  findExpiredConnections(): TunnelConnection[] {
+    const now = new Date();
+    const expired: TunnelConnection[] = [];
+    for (const connection of this.tunnelsBySubdomain.values()) {
+      if (connection.expiresAt && connection.expiresAt < now) {
+        expired.push(connection);
+      }
+    }
+    return expired;
+  }
+
+  /**
+   * Start periodic expiry checker
+   * Closes tunnels whose bridge keys have expired.
+   */
+  startExpiryChecker(intervalMs: number = 30_000): NodeJS.Timeout {
+    const timer = setInterval(() => {
+      const expired = this.findExpiredConnections();
+      for (const conn of expired) {
+        console.log("[ConnectionManager] Tunnel expired:", conn.subdomain, "key expired at", conn.expiresAt?.toISOString());
+        // Notify and close — the socket 'close' event handler in
+        // websocket-handler.ts will call unregister(), so we don't do it here
+        // to avoid double-unregister.
+        if (conn.socket.readyState === conn.socket.OPEN) {
+          conn.socket.send(JSON.stringify({
+            type: "error",
+            timestamp: Date.now(),
+            payload: {
+              code: "KEY_EXPIRED",
+              message: "Bridge key has expired. Tunnel is closing.",
+              fatal: true,
+            },
+          }));
+          conn.socket.close(4002, "Bridge key expired");
+        } else if (conn.socket.readyState === conn.socket.CLOSED) {
+          // Socket fully closed (no close event pending) — clean up directly
+          this.unregister(conn.subdomain);
+        }
+        // CLOSING state: close event will fire and handler will unregister
+      }
+      if (expired.length > 0) {
+        console.log(`[ConnectionManager] Closed ${expired.length} expired tunnel(s)`);
+      }
+    }, intervalMs);
+    timer.unref();
+    return timer;
+  }
+
+  /**
    * Get summary of all connections (for dashboard/API)
    */
   getSummary(): Array<{

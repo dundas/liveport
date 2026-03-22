@@ -26,6 +26,7 @@ import {
   createRedisClient,
   createRateLimiter,
   RateLimitPresets,
+  getKeyPrefix,
   type RateLimiter,
 } from "@liveport/shared";
 
@@ -49,8 +50,8 @@ async function getRateLimiter(): Promise<RateLimiter | null> {
   try {
     const redis = createRedisClient({ url: redisUrl });
     rateLimiter = createRateLimiter(redis, {
-      ...RateLimitPresets.websocket,
-      keyPrefix: "tunnel:ratelimit",
+      ...RateLimitPresets.keyValidation,
+      keyPrefix: "tunnel:keyval",
     });
     console.log("[RateLimiter] Initialized with Redis");
     return rateLimiter;
@@ -133,8 +134,8 @@ export async function handleConnection(
   // Rate limiting check (by IP or key prefix)
   const limiter = await getRateLimiter();
   if (limiter) {
-    // Use key prefix as rate limit identifier (first 8 chars)
-    const keyPrefix = bridgeKey.substring(0, 8);
+    // Use getKeyPrefix for consistent prefix extraction with DB lookups
+    const keyPrefix = getKeyPrefix(bridgeKey);
     const rateLimitResult = await limiter.increment(keyPrefix);
 
     if (!rateLimitResult.allowed) {
@@ -314,7 +315,7 @@ export async function handleConnection(
 
   // Handle errors
   socket.on("error", (err) => {
-    console.error(`[WebSocket] Error on ${subdomain}:`, err);
+    console.error("[WebSocket] Error on", subdomain, err);
   });
 }
 
@@ -465,7 +466,7 @@ function handleMessage(
         publicWs.send(data, { binary: isBinary, compress: false });
         console.log(`[WebSocket] Relayed ${data.length} bytes to public client ${dataMsg.id} (binary: ${isBinary})`);
       } catch (error) {
-        console.error(`[WebSocket] Failed to relay data to ${dataMsg.id}:`, (error as Error).message);
+        console.error("[WebSocket] Failed to relay data to", dataMsg.id, (error as Error).message);
       }
 
       break;

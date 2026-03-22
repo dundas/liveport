@@ -124,6 +124,7 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
   const proxyInterceptor = createProxyRequestInterceptor(proxyConfig);
   const proxyConnectHandler = createProxyConnectHandler(proxyConfig);
   const connectionManager = getConnectionManager();
+  const expiryTimer = connectionManager.startExpiryChecker();
 
   // =========================================================================
   // WEBSOCKET SERVER (Port 8080) - Handles WebSocket + proxies HTTP to 8081
@@ -307,7 +308,8 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
   const shutdown = async () => {
     console.log("\nShutting down...");
 
-    // Stop metering service
+    // Stop expiry checker and metering service
+    clearInterval(expiryTimer);
     stopMetering();
 
     const connectionManager = getConnectionManager();
