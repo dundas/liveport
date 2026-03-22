@@ -24,6 +24,7 @@ program
   .option("-k, --key <key>", "Bridge key for authentication")
   .option("-s, --server <url>", "Tunnel server URL")
   .option("-r, --region <region>", "Server region")
+  .option("-n, --name <name>", "Custom tunnel name")
   .option("--ttl <duration>", "Time-to-live for tunnel (e.g., 30m, 2h, 1d)")
   .action(connectCommand);
 

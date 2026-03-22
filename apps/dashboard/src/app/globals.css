@@ -76,3 +76,96 @@
     background-size: 20px 20px;
   }
 }
+
+/* Blog post prose styles */
+.prose-blog {
+  color: #e0e0e0;
+  line-height: 1.75;
+}
+.prose-blog h1,
+.prose-blog h2,
+.prose-blog h3,
+.prose-blog h4 {
+  color: #ffffff;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  line-height: 1.25;
+}
+.prose-blog h1 { font-size: 2rem; }
+.prose-blog h2 { font-size: 1.5rem; border-bottom: 1px solid #333333; padding-bottom: 0.5rem; }
+.prose-blog h3 { font-size: 1.25rem; }
+.prose-blog p { margin-bottom: 1.25rem; }
+.prose-blog a { color: #00ff41; text-decoration: underline; }
+.prose-blog a:hover { opacity: 0.8; }
+.prose-blog strong { color: #ffffff; font-weight: 700; }
+.prose-blog em { color: #cccccc; font-style: italic; }
+.prose-blog code {
+  background: #1a1a1a;
+  border: 1px solid #333333;
+  color: #00ff41;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.875em;
+  font-family: var(--font-jetbrains-mono), monospace;
+}
+.prose-blog pre {
+  background: #0a0a0a;
+  border: 1px solid #333333;
+  padding: 1.25rem;
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+}
+.prose-blog pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #e0e0e0;
+  font-size: 0.875rem;
+}
+.prose-blog ul,
+.prose-blog ol {
+  margin-bottom: 1.25rem;
+  padding-left: 1.5rem;
+}
+.prose-blog ul { list-style-type: disc; }
+.prose-blog ol { list-style-type: decimal; }
+.prose-blog li { margin-bottom: 0.375rem; }
+.prose-blog blockquote {
+  border-left: 3px solid #00ff41;
+  padding-left: 1rem;
+  margin: 1.5rem 0;
+  color: #888888;
+  font-style: italic;
+}
+.prose-blog table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+}
+.prose-blog th {
+  background: #1a1a1a;
+  border: 1px solid #333333;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  color: #00ff41;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.prose-blog td {
+  border: 1px solid #333333;
+  padding: 0.5rem 0.75rem;
+}
+.prose-blog hr {
+  border: none;
+  border-top: 1px solid #333333;
+  margin: 2rem 0;
+}
+.prose-blog img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #333333;
+}
