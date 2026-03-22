@@ -6,6 +6,7 @@
 
 import { Command } from "commander";
 import { connectCommand } from "./commands/connect";
+import { shareCommand } from "./commands/share";
 import { statusCommand } from "./commands/status";
 import { disconnectCommand } from "./commands/disconnect";
 import { configSetCommand, configGetCommand, configListCommand, configDeleteCommand } from "./commands/config";
@@ -25,6 +26,15 @@ program
   .option("-r, --region <region>", "Server region")
   .option("--ttl <duration>", "Time-to-live for tunnel (e.g., 30m, 2h, 1d)")
   .action(connectCommand);
+
+program
+  .command("share <port>")
+  .description("Create a temporary key and tunnel for quick sharing")
+  .option("-k, --key <key>", "Bridge key for authentication")
+  .option("-s, --server <url>", "Tunnel server URL")
+  .option("--ttl <duration>", "Time-to-live for temporary key (default: 2h)")
+  .option("--max-uses <number>", "Maximum uses for temporary key (default: 1)", parseInt)
+  .action(shareCommand);
 
 program
   .command("status")

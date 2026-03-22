@@ -230,3 +230,11 @@ export interface ConnectOptions {
   name?: string;
   ttl?: string;
 }
+
+// Share options
+export interface ShareOptions {
+  key?: string;
+  server?: string;
+  ttl?: string;
+  maxUses?: number;
+}

@@ -190,9 +190,16 @@ export default function KeysPage() {
                 {keys.map((key) => (
                   <TableRow key={key.id}>
                     <TableCell>
-                      <code className="rounded bg-muted px-2 py-1 text-sm font-mono">
-                        {key.prefix}...
-                      </code>
+                      <div className="flex items-center gap-2">
+                        <code className="rounded bg-muted px-2 py-1 text-sm font-mono">
+                          {key.prefix}...
+                        </code>
+                        {key.name === "Temporary (liveport share)" && (
+                          <Badge variant="outline" className="bg-purple-500/10 text-purple-700 text-xs">
+                            temporary
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{getStatusBadge(key)}</TableCell>
                     <TableCell>
