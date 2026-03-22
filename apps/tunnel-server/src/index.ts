@@ -245,6 +245,7 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
     const clientTtlSeconds = clientTtlHeader && /^\d+$/.test(clientTtlHeader)
       ? parseInt(clientTtlHeader, 10)
       : undefined;
+    const requireAccessToken = request.headers["x-require-access-token"] === "true";
 
     if (!bridgeKey) {
       console.log("[WS] Connection rejected: missing X-Bridge-Key header");
@@ -292,6 +293,7 @@ export async function startServer(config: Partial<TunnelServerConfig> = {}): Pro
       maxConnectionsPerKey: cfg.maxConnectionsPerKey,
       tunnelName,
       clientTtlSeconds: clientTtlSeconds && !isNaN(clientTtlSeconds) ? clientTtlSeconds : undefined,
+      requireAccessToken,
     }).catch((err) => {
       console.error("[WS] Error handling connection:", err);
       socket.close(1011, "Server error");

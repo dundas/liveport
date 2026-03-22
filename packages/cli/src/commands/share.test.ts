@@ -262,6 +262,34 @@ describe("shareCommand", () => {
       expect.stringContaining("Failed to create temporary key")
     );
   });
+
+  it("should set requireAccessToken when connecting tunnel", async () => {
+    const { getConfigValue } = await import("../config");
+    vi.mocked(getConfigValue).mockImplementation((key, cliValue) => {
+      if (key === "key") return cliValue || "lpk_test_key_value";
+      return undefined;
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        key: "lpk_temp_key_value",
+        id: "temp-key-id",
+        expiresAt: new Date(Date.now() + 7200000).toISOString(),
+      }),
+    });
+
+    const { TunnelClient } = await import("../tunnel-client");
+    const { shareCommand } = await import("./share");
+    const promise = shareCommand("3000", { key: "lpk_test_key_value" });
+    await promise.catch(() => {});
+
+    expect(TunnelClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requireAccessToken: true,
+      })
+    );
+  });
 });
 
 describe("ShareOptions", () => {

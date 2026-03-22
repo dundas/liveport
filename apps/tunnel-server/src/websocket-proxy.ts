@@ -89,6 +89,29 @@ export function handleWebSocketUpgradeEvent(
     return;
   }
 
+  // Check access token if required (Bearer header only — no query params
+  // to prevent token exposure in server logs and Referer headers)
+  if (connection.accessToken) {
+    let token: string | null = null;
+
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const match = authHeader.match(/^Bearer\s+(.+)$/i);
+      if (match) {
+        token = match[1];
+      }
+    }
+
+    if (!connectionManager.validateAccessToken(subdomain, token)) {
+      const body = JSON.stringify({ error: "Unauthorized", message: "Valid access token required" });
+      socket.write(
+        `HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`
+      );
+      socket.destroy();
+      return;
+    }
+  }
+
   // Check WebSocket connection limit
   const wsCount = connectionManager.getWebSocketCount(subdomain);
   if (wsCount >= MAX_WEBSOCKETS_PER_TUNNEL) {

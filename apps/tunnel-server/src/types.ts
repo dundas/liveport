@@ -31,6 +31,7 @@ export interface ConnectedPayload {
   subdomain: string;
   url: string;
   expiresAt: string | null;
+  accessToken?: string | null;
 }
 
 export interface ConnectedMessage extends BaseMessage {
@@ -232,6 +233,7 @@ export interface TunnelConnection {
   requestCount: number;
   bytesTransferred: number; // Track total bytes for metering
   expiresAt: Date | null; // null means never expires
+  accessToken?: string; // Access token for protected tunnels (liveport share)
 }
 
 // Proxied WebSocket connection

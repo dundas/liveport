@@ -72,6 +72,22 @@ function headersToObject(headers: Headers): Record<string, string> {
 }
 
 /**
+ * Extract access token from request Authorization header.
+ * Only supports Bearer token — query params intentionally excluded
+ * to prevent token exposure in server logs and Referer headers.
+ */
+export function extractAccessToken(c: Context): string | null {
+  const authHeader = c.req.header("authorization");
+  if (authHeader) {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+/**
  * Check if request is a WebSocket upgrade request
  */
 export function isWebSocketUpgrade(request: Request): boolean {
@@ -122,6 +138,17 @@ async function handleWebSocketUpgrade(
 
   if (connection.state !== "active") {
     return c.text(`Tunnel is ${connection.state}`, 502);
+  }
+
+  // Check access token if required
+  if (connection.accessToken) {
+    const token = extractAccessToken(c);
+    if (!connectionManager.validateAccessToken(subdomain, token)) {
+      return c.json(
+        { error: "Unauthorized", message: "Valid access token required" },
+        401
+      );
+    }
   }
 
   // Check WebSocket connection limit
@@ -243,6 +270,17 @@ async function forwardToTunnel(
       },
       502
     );
+  }
+
+  // Check access token if required
+  if (connection.accessToken) {
+    const token = extractAccessToken(c);
+    if (!connectionManager.validateAccessToken(subdomain, token)) {
+      return c.json(
+        { error: "Unauthorized", message: "Valid access token required" },
+        401
+      );
+    }
   }
 
   // Generate request ID

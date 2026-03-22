@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => {
     addBytesTransferred: vi.fn(),
     getWebSocketCount: vi.fn(),
     waitForWebSocketUpgrade: vi.fn(),
+    validateAccessToken: vi.fn(),
   };
 
   const logger = {
@@ -70,7 +71,7 @@ vi.mock("./metering", () => ({
   })),
 }));
 
-import { createHttpHandler, isWebSocketUpgrade } from "./http-handler";
+import { createHttpHandler, isWebSocketUpgrade, extractAccessToken } from "./http-handler";
 
 describe("HTTP Handler", () => {
   let app: Hono;
@@ -231,6 +232,122 @@ describe("HTTP Handler", () => {
         error: "Gateway Timeout",
         message: "Request to local server timed out",
       }));
+    });
+  });
+
+  describe("Access Token Validation", () => {
+    it("should return 401 when access token is required but not provided", async () => {
+      const protectedConnection = {
+        ...mocks.connection,
+        accessToken: "lpa_test_token_1234567890abcdef",
+      };
+      mocks.connectionManager.findBySubdomain.mockReturnValue(protectedConnection);
+      mocks.connectionManager.validateAccessToken.mockReturnValue(false);
+
+      const req = new Request("https://test-subdomain.liveport.online/api/test", {
+        method: "GET",
+        headers: { "host": "test-subdomain.liveport.online" },
+      });
+
+      const res = await app.request(req);
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data.error).toBe("Unauthorized");
+      expect(data.message).toBe("Valid access token required");
+    });
+
+    it("should allow request with valid Bearer token", async () => {
+      const accessToken = "lpa_test_token_1234567890abcdef";
+      const protectedConnection = {
+        ...mocks.connection,
+        accessToken,
+      };
+      mocks.connectionManager.findBySubdomain.mockReturnValue(protectedConnection);
+      mocks.connectionManager.validateAccessToken.mockReturnValue(true);
+      mocks.connectionManager.registerPendingRequest.mockResolvedValue({
+        status: 200,
+        headers: { "content-type": "text/plain" },
+        body: Buffer.from("OK").toString("base64"),
+      });
+
+      const req = new Request("https://test-subdomain.liveport.online/api/test", {
+        method: "GET",
+        headers: {
+          "host": "test-subdomain.liveport.online",
+          "authorization": `Bearer ${accessToken}`,
+        },
+      });
+
+      const res = await app.request(req);
+      expect(res.status).toBe(200);
+      expect(mocks.connectionManager.validateAccessToken).toHaveBeenCalledWith(
+        "test-subdomain",
+        accessToken
+      );
+    });
+
+    it("should reject query parameter token (Bearer header only)", async () => {
+      const accessToken = "lpa_test_token_1234567890abcdef";
+      const protectedConnection = {
+        ...mocks.connection,
+        accessToken,
+      };
+      mocks.connectionManager.findBySubdomain.mockReturnValue(protectedConnection);
+      mocks.connectionManager.validateAccessToken.mockReturnValue(false);
+
+      const req = new Request(`https://test-subdomain.liveport.online/api/test?token=${accessToken}`, {
+        method: "GET",
+        headers: { "host": "test-subdomain.liveport.online" },
+      });
+
+      const res = await app.request(req);
+      expect(res.status).toBe(401);
+      expect(mocks.connectionManager.validateAccessToken).toHaveBeenCalledWith(
+        "test-subdomain",
+        null
+      );
+    });
+
+    it("should not check access token for open tunnels (no accessToken on connection)", async () => {
+      // Connection without accessToken (regular liveport connect)
+      mocks.connectionManager.findBySubdomain.mockReturnValue(mocks.connection);
+      mocks.connectionManager.registerPendingRequest.mockResolvedValue({
+        status: 200,
+        headers: {},
+        body: "",
+      });
+
+      const req = new Request("https://test-subdomain.liveport.online/api/test", {
+        method: "GET",
+        headers: { "host": "test-subdomain.liveport.online" },
+      });
+
+      const res = await app.request(req);
+      expect(res.status).toBe(200);
+      // validateAccessToken should NOT be called because connection has no accessToken
+      expect(mocks.connectionManager.validateAccessToken).not.toHaveBeenCalled();
+    });
+
+    it("should return 401 for WebSocket upgrade with missing access token", async () => {
+      const protectedConnection = {
+        ...mocks.connection,
+        accessToken: "lpa_ws_token_1234567890abcdef12",
+      };
+      mocks.connectionManager.findBySubdomain.mockReturnValue(protectedConnection);
+      mocks.connectionManager.validateAccessToken.mockReturnValue(false);
+
+      const req = new Request("https://test-subdomain.liveport.online/ws", {
+        headers: {
+          "host": "test-subdomain.liveport.online",
+          "upgrade": "websocket",
+          "connection": "Upgrade",
+        },
+      });
+
+      const res = await app.request(req);
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data.error).toBe("Unauthorized");
     });
   });
 

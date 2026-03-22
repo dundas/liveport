@@ -135,6 +135,7 @@ export async function shareCommand(
     bridgeKey: tempKeyData.key,
     localPort,
     ttlSeconds,
+    requireAccessToken: true,
   });
 
   // Set up event handlers
@@ -152,6 +153,17 @@ export async function shareCommand(
         const hours = Math.round(remainingSecs / 3600);
         logger.info(`Tunnel expires in ${hours} hour${hours === 1 ? "" : "s"}`);
       }
+    }
+
+    // Display access token for sharing
+    if (info.accessToken) {
+      logger.blank();
+      logger.info("Share with your teammate/agent:");
+      logger.info(`  URL:   ${info.url}`);
+      logger.info(`  Token: ${info.accessToken}`);
+      logger.blank();
+      logger.info("  curl example:");
+      logger.info(`    curl ${info.url} -H "Authorization: Bearer ${info.accessToken}"`);
     }
   });
 

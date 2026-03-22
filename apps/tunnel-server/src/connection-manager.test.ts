@@ -77,6 +77,106 @@ describe("Connection Manager", () => {
     });
   });
 
+  describe("Access Token Validation", () => {
+    it("should return true for tunnels with no access token (open tunnel)", () => {
+      const subdomain = manager.register(
+        mockSocket,
+        "t-1",
+        "k-1",
+        "u-1",
+        3000,
+        new Date()
+      );
+
+      // No access token set — any request should pass
+      expect(manager.validateAccessToken(subdomain!, null)).toBe(true);
+      expect(manager.validateAccessToken(subdomain!, "lpa_anything")).toBe(true);
+    });
+
+    it("should return true when token matches", () => {
+      const accessToken = "lpa_test1234567890abcdefghij1234";
+      const subdomain = manager.register(
+        mockSocket,
+        "t-2",
+        "k-2",
+        "u-2",
+        3000,
+        new Date(),
+        undefined,
+        accessToken
+      );
+
+      expect(manager.validateAccessToken(subdomain!, accessToken)).toBe(true);
+    });
+
+    it("should return false when token does not match", () => {
+      const accessToken = "lpa_test1234567890abcdefghij1234";
+      const subdomain = manager.register(
+        mockSocket,
+        "t-3",
+        "k-3",
+        "u-3",
+        3000,
+        new Date(),
+        undefined,
+        accessToken
+      );
+
+      expect(manager.validateAccessToken(subdomain!, "lpa_wrong_token_value_here_abc")).toBe(false);
+    });
+
+    it("should return false when token required but not provided", () => {
+      const accessToken = "lpa_test1234567890abcdefghij1234";
+      const subdomain = manager.register(
+        mockSocket,
+        "t-4",
+        "k-4",
+        "u-4",
+        3000,
+        new Date(),
+        undefined,
+        accessToken
+      );
+
+      expect(manager.validateAccessToken(subdomain!, null)).toBe(false);
+    });
+
+    it("should return false for non-existent subdomain", () => {
+      expect(manager.validateAccessToken("nonexistent", "lpa_token")).toBe(false);
+    });
+
+    it("should store access token on connection record", () => {
+      const accessToken = "lpa_stored_token_value_abc12345";
+      const subdomain = manager.register(
+        mockSocket,
+        "t-5",
+        "k-5",
+        "u-5",
+        3000,
+        new Date(),
+        undefined,
+        accessToken
+      );
+
+      const conn = manager.findBySubdomain(subdomain!);
+      expect(conn?.accessToken).toBe(accessToken);
+    });
+
+    it("should not set accessToken when not provided", () => {
+      const subdomain = manager.register(
+        mockSocket,
+        "t-6",
+        "k-6",
+        "u-6",
+        3000,
+        new Date()
+      );
+
+      const conn = manager.findBySubdomain(subdomain!);
+      expect(conn?.accessToken).toBeUndefined();
+    });
+  });
+
   describe("Lifecycle", () => {
     it("should register and unregister tunnels correctly", () => {
       const subdomain = manager.register(

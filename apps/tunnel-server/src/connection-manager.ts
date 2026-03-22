@@ -4,6 +4,7 @@
  * Manages active tunnel connections and provides lookup functionality.
  */
 
+import { timingSafeEqual, createHmac } from "crypto";
 import type { WebSocket } from "ws";
 import type {
   TunnelConnection,
@@ -57,7 +58,8 @@ export class ConnectionManager {
     userId: string,
     localPort: number,
     expiresAt: Date | null,
-    tunnelName?: string
+    tunnelName?: string,
+    accessToken?: string
   ): string | null {
     // Get existing subdomains to check for collisions
     const existingSubdomains = new Set(this.tunnelsBySubdomain.keys());
@@ -84,6 +86,7 @@ export class ConnectionManager {
       requestCount: 0,
       bytesTransferred: 0,
       expiresAt,
+      ...(accessToken ? { accessToken } : {}),
     };
 
     // Store in indexes
@@ -347,6 +350,37 @@ export class ConnectionManager {
     }, intervalMs);
     timer.unref();
     return timer;
+  }
+
+  /**
+   * Validate an access token for a given subdomain.
+   * Returns true if:
+   * - The connection has no accessToken (open tunnel, backward compatible)
+   * - The provided token matches the connection's accessToken (constant-time comparison)
+   * Returns false otherwise.
+   */
+  validateAccessToken(subdomain: string, token: string | null): boolean {
+    const connection = this.tunnelsBySubdomain.get(subdomain);
+    if (!connection) {
+      return false;
+    }
+
+    // No access token required — open tunnel
+    if (!connection.accessToken) {
+      return true;
+    }
+
+    // Token required but not provided
+    if (!token) {
+      return false;
+    }
+
+    // HMAC-based constant-time comparison to prevent timing attacks.
+    // Using HMAC produces fixed-size digests, avoiding length leakage.
+    const key = "liveport-access-token-compare";
+    const expectedHash = createHmac("sha256", key).update(connection.accessToken).digest();
+    const providedHash = createHmac("sha256", key).update(token).digest();
+    return timingSafeEqual(expectedHash, providedHash);
   }
 
   /**

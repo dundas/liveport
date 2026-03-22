@@ -135,6 +135,11 @@ export class TunnelClient {
       if (this.config.ttlSeconds) {
         headers["X-Tunnel-TTL"] = String(this.config.ttlSeconds);
       }
+
+      // Request access token for protected tunnels (liveport share)
+      if (this.config.requireAccessToken) {
+        headers["X-Require-Access-Token"] = "true";
+      }
       
       this.socket = new WebSocket(wsUrl, {
         headers,
@@ -237,6 +242,7 @@ export class TunnelClient {
           url: connMsg.payload.url,
           localPort: this.config.localPort,
           expiresAt: new Date(connMsg.payload.expiresAt),
+          ...(connMsg.payload.accessToken != null ? { accessToken: connMsg.payload.accessToken } : {}),
         };
         this.state = "connected";
         this.reconnectAttempts = 0;

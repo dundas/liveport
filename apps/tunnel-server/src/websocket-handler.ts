@@ -29,7 +29,10 @@ import {
   getKeyPrefix,
   type RateLimiter,
 } from "@liveport/shared";
+import { nanoid } from "nanoid";
 import { computeEffectiveExpiry } from "./ttl";
+
+const ACCESS_TOKEN_PREFIX = "lpa_";
 
 // Rate limiter instance (initialized lazily)
 let rateLimiter: RateLimiter | null = null;
@@ -70,6 +73,7 @@ export interface WebSocketHandlerConfig {
   maxConnectionsPerKey: number;
   tunnelName?: string;
   clientTtlSeconds?: number;
+  requireAccessToken?: boolean;
 }
 
 const defaultConfig: WebSocketHandlerConfig = {
@@ -215,6 +219,11 @@ export async function handleConnection(
     validation.userTier || "free"
   );
 
+  // Generate access token if requested
+  const accessToken = cfg.requireAccessToken
+    ? `${ACCESS_TOKEN_PREFIX}${nanoid(32)}`
+    : undefined;
+
   // Register the connection
   subdomain = connectionManager.register(
     socket,
@@ -223,7 +232,8 @@ export async function handleConnection(
     validation.userId!,
     localPort,
     effectiveExpiresAt,
-    cfg.tunnelName
+    cfg.tunnelName,
+    accessToken
   );
 
   if (!subdomain) {
@@ -250,6 +260,7 @@ export async function handleConnection(
       subdomain,
       url,
       expiresAt: effectiveExpiresAt.toISOString(),
+      accessToken: accessToken || null,
     },
   };
   send(socket, connectedMessage);

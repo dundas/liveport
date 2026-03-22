@@ -31,6 +31,7 @@ export interface ConnectedPayload {
   subdomain: string;
   url: string;
   expiresAt: string;
+  accessToken?: string | null;
 }
 
 export interface ConnectedMessage extends BaseMessage {
@@ -202,6 +203,7 @@ export interface TunnelClientConfig {
   heartbeatInterval?: number;
   reconnectMaxAttempts?: number;
   reconnectBaseDelay?: number;
+  requireAccessToken?: boolean;
 }
 
 // Tunnel info returned after connection
@@ -211,6 +213,7 @@ export interface TunnelInfo {
   url: string;
   localPort: number;
   expiresAt: Date;
+  accessToken?: string;
 }
 
 // Event types for tunnel client
