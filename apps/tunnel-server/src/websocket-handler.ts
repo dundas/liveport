@@ -29,6 +29,7 @@ import {
   getKeyPrefix,
   type RateLimiter,
 } from "@liveport/shared";
+import { computeEffectiveExpiry } from "./ttl";
 
 // Rate limiter instance (initialized lazily)
 let rateLimiter: RateLimiter | null = null;
@@ -68,6 +69,7 @@ export interface WebSocketHandlerConfig {
   heartbeatTimeout: number;
   maxConnectionsPerKey: number;
   tunnelName?: string;
+  clientTtlSeconds?: number;
 }
 
 const defaultConfig: WebSocketHandlerConfig = {
@@ -206,6 +208,13 @@ export async function handleConnection(
   // Generate tunnel ID
   tunnelId = crypto.randomUUID();
 
+  // Compute effective expiry: min(key.expiresAt, now + clientTTL, now + tierMaxTTL)
+  const effectiveExpiresAt = computeEffectiveExpiry(
+    validation.expiresAt,
+    cfg.clientTtlSeconds,
+    validation.userTier || "free"
+  );
+
   // Register the connection
   subdomain = connectionManager.register(
     socket,
@@ -213,7 +222,7 @@ export async function handleConnection(
     validation.keyId!,
     validation.userId!,
     localPort,
-    validation.expiresAt!,
+    effectiveExpiresAt,
     cfg.tunnelName
   );
 
@@ -240,7 +249,7 @@ export async function handleConnection(
       tunnelId,
       subdomain,
       url,
-      expiresAt: validation.expiresAt?.toISOString() || null,
+      expiresAt: effectiveExpiresAt.toISOString(),
     },
   };
   send(socket, connectedMessage);

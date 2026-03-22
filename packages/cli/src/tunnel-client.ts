@@ -130,6 +130,11 @@ export class TunnelClient {
       if (this.config.tunnelName) {
         headers["X-Tunnel-Name"] = this.config.tunnelName;
       }
+
+      // Add TTL if provided
+      if (this.config.ttlSeconds) {
+        headers["X-Tunnel-TTL"] = String(this.config.ttlSeconds);
+      }
       
       this.socket = new WebSocket(wsUrl, {
         headers,

@@ -198,6 +198,7 @@ export interface TunnelClientConfig {
   bridgeKey: string;
   localPort: number;
   tunnelName?: string;
+  ttlSeconds?: number;
   heartbeatInterval?: number;
   reconnectMaxAttempts?: number;
   reconnectBaseDelay?: number;
@@ -227,4 +228,5 @@ export interface ConnectOptions {
   server?: string;
   region?: string;
   name?: string;
+  ttl?: string;
 }

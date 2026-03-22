@@ -13,6 +13,31 @@ import type { ConnectOptions } from "../types";
 // Default server URL (production tunnel server - Hetzner deployment)
 const DEFAULT_SERVER_URL = "https://tunnel.liveport.online";
 
+/**
+ * Parse a duration string (e.g., "30s", "5m", "2h", "1d") into seconds.
+ * Returns undefined if the format is invalid.
+ */
+export function parseDuration(duration: string): number | undefined {
+  const match = duration.match(/^(\d+)(s|m|h|d)$/);
+  if (!match) {
+    return undefined;
+  }
+
+  const value = parseInt(match[1], 10);
+  if (value === 0) return undefined;
+
+  const unit = match[2];
+
+  const multipliers: Record<string, number> = {
+    s: 1,
+    m: 60,
+    h: 3600,
+    d: 86400,
+  };
+
+  return value * multipliers[unit];
+}
+
 // Active client reference for graceful shutdown
 let activeClient: TunnelClient | null = null;
 
@@ -64,12 +89,22 @@ export async function connectCommand(
     color: "cyan",
   }).start();
 
+  // Parse TTL if provided
+  let ttlSeconds: number | undefined;
+  if (options.ttl) {
+    ttlSeconds = parseDuration(options.ttl);
+    if (ttlSeconds === undefined) {
+      logger.warn(`Invalid TTL format "${options.ttl}" (expected e.g., 30m, 2h, 1d). Ignoring.`);
+    }
+  }
+
   // Create tunnel client
   const client = new TunnelClient({
     serverUrl,
     bridgeKey,
     localPort,
     tunnelName: options.name,
+    ttlSeconds,
   });
 
   // Store for graceful shutdown
@@ -79,6 +114,18 @@ export async function connectCommand(
   client.on("connected", (info) => {
     spinner.stop();
     logger.connected(info.url, info.localPort);
+    if (info.expiresAt && ttlSeconds !== undefined) {
+      const remainingSecs = Math.round((info.expiresAt.getTime() - Date.now()) / 1000);
+      if (remainingSecs < 120) {
+        logger.info(`Tunnel expires in ${remainingSecs} seconds`);
+      } else if (remainingSecs < 7200) {
+        const mins = Math.round(remainingSecs / 60);
+        logger.info(`Tunnel expires in ${mins} minute${mins === 1 ? "" : "s"}`);
+      } else {
+        const hours = Math.round(remainingSecs / 3600);
+        logger.info(`Tunnel expires in ${hours} hour${hours === 1 ? "" : "s"}`);
+      }
+    }
   });
 
   client.on("disconnected", (reason) => {

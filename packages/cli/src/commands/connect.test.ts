@@ -20,6 +20,7 @@ vi.mock("../logger", () => ({
   logger: {
     banner: vi.fn(),
     info: vi.fn(),
+    warn: vi.fn(),
     error: vi.fn(),
     success: vi.fn(),
     connected: vi.fn(),
@@ -167,5 +168,91 @@ describe("getActiveClient", () => {
 
     // Verify the function is exported and callable
     expect(typeof getActiveClient).toBe("function");
+  });
+});
+
+describe("parseDuration", () => {
+  it("should parse seconds", async () => {
+    const { parseDuration } = await import("./connect");
+    expect(parseDuration("30s")).toBe(30);
+  });
+
+  it("should parse minutes", async () => {
+    const { parseDuration } = await import("./connect");
+    expect(parseDuration("5m")).toBe(300);
+  });
+
+  it("should parse hours", async () => {
+    const { parseDuration } = await import("./connect");
+    expect(parseDuration("2h")).toBe(7200);
+  });
+
+  it("should parse days", async () => {
+    const { parseDuration } = await import("./connect");
+    expect(parseDuration("1d")).toBe(86400);
+  });
+
+  it("should return undefined for invalid format", async () => {
+    const { parseDuration } = await import("./connect");
+    expect(parseDuration("abc")).toBeUndefined();
+    expect(parseDuration("30")).toBeUndefined();
+    expect(parseDuration("m30")).toBeUndefined();
+    expect(parseDuration("")).toBeUndefined();
+    expect(parseDuration("2w")).toBeUndefined();
+  });
+
+  it("should return undefined for zero values", async () => {
+    const { parseDuration } = await import("./connect");
+    expect(parseDuration("0s")).toBeUndefined();
+    expect(parseDuration("0m")).toBeUndefined();
+    expect(parseDuration("0h")).toBeUndefined();
+    expect(parseDuration("0d")).toBeUndefined();
+  });
+
+  it("should pass ttlSeconds to TunnelClient when valid TTL provided", async () => {
+    const { getConfigValue } = await import("../config");
+    vi.mocked(getConfigValue).mockImplementation((key, cliValue) => {
+      if (key === "key") return cliValue || "lpk_test";
+      return undefined;
+    });
+
+    const { TunnelClient } = await import("../tunnel-client");
+    const { connectCommand } = await import("./connect");
+
+    const promise = connectCommand("3000", { key: "lpk_test", ttl: "2h" });
+
+    expect(TunnelClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ttlSeconds: 7200,
+      })
+    );
+
+    await promise.catch(() => {});
+  });
+
+  it("should warn and pass undefined ttlSeconds for invalid TTL", async () => {
+    const { getConfigValue } = await import("../config");
+    vi.mocked(getConfigValue).mockImplementation((key, cliValue) => {
+      if (key === "key") return cliValue || "lpk_test";
+      return undefined;
+    });
+
+    const { logger } = await import("../logger");
+    const { TunnelClient } = await import("../tunnel-client");
+    const { connectCommand } = await import("./connect");
+
+    const promise = connectCommand("3000", { key: "lpk_test", ttl: "invalid" });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid TTL format")
+    );
+
+    expect(TunnelClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ttlSeconds: undefined,
+      })
+    );
+
+    await promise.catch(() => {});
   });
 });
